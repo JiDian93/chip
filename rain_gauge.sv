@@ -35,16 +35,23 @@ timeprecision 100ps;
 // 记录上一拍的 nRain，用于边沿检测
 logic prev_nRain;
 
+// 单稳态去抖计数器（25ms @ 32.768kHz = 820 个周期）
+// 需要 10 位计数器 (2^10 = 1024 > 820)
+localparam int DEBOUNCE_COUNT = 820;
+logic [9:0] debounce_counter;
+
 // 中间计算用：以 0.01mm 为单位的总雨量 (mm*100)
 int unsigned rain_01mm;
 int unsigned value_01mm;
 
 // 统计 nRain 脉冲个数；nReset 为异步清零，Start/Adjust (nStart) 为同步清零
+// 单稳态去抖：检测到下降沿后启动定时器，定时器运行期间忽略输入
 always_ff @( posedge Clock, negedge nReset )
   if ( ! nReset )
     begin
       total_rain_pulses <= '0;
       prev_nRain        <= 1'b1;
+      debounce_counter  <= '0;
     end
   else
     begin
@@ -56,10 +63,16 @@ always_ff @( posedge Clock, negedge nReset )
         begin
           total_rain_pulses <= '0;
         end
-      // 检测 nRain 的下降沿（从 1 变为 0 视为一次脉冲）
+      // 去抖计数器非零时递减，忽略输入
+      else if ( debounce_counter != '0 )
+        begin
+          debounce_counter <= debounce_counter - 1'b1;
+        end
+      // 去抖计数器为零时，检测 nRain 的下降沿（从 1 变为 0 视为一次脉冲）
       else if ( prev_nRain && ! nRain )
         begin
           total_rain_pulses <= total_rain_pulses + 1'b1;
+          debounce_counter  <= DEBOUNCE_COUNT;  // 启动单稳态定时器
         end
     end
 
