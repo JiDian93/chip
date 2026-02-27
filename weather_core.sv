@@ -36,11 +36,55 @@ module weather_core(
   output logic [3:0] rain_units_bcd,
   output logic [3:0] rain_tenths_bcd,
   output logic [3:0] rain_hundredths_bcd
-
+  
   );
 
 timeunit 1ns;
 timeprecision 100ps;
+
+  // 时间计数器的 BCD 输出 
+  logic [3:0] min_tens, min_units;
+  logic [3:0] sec_tens, sec_units;
+
+    // 内部连线信号
+  logic tick_1kHz, tick_1Hz;
+  logic [2:0] display_mode;
+  logic nClear_rain; 
+  logic nClear_time; 
+
+    // 1. 分频器 (提供 1kHz 和 1Hz 脉冲)
+  clock_divider DIV (
+    .Clock(Clock),
+    .nReset(nReset),
+    .Demo(Demo),
+    .tick_1kHz(tick_1kHz),
+    .tick_1Hz(tick_1Hz)
+  );
+
+  // 2. 主状态机 (控制模式与清零)
+  main_fsm FSM (
+    .Clock(Clock),
+    .nReset(nReset),
+    .tick_1kHz(tick_1kHz),
+    .nMode(nMode),
+    .nStart(nStart),
+    .display_mode(display_mode),
+    .nClear_rain(nClear_rain),
+    .nClear_time(nClear_time)
+  );
+
+    // 3. 时间计数器 (由 FSM 的 nClear_time 信号控制)
+  time_counters TIMER (
+    .Clock(Clock),
+    .nReset(nReset),
+    .tick_1Hz(tick_1Hz),
+    .nClear_time(nClear_time),
+    .min_tens(min_tens),
+    .min_units(min_units),
+    .sec_tens(sec_tens),
+    .sec_units(sec_units)
+  );
+
 
 // 雨量功能子模块：统计总降雨量，并给出 ddd.dd mm 形式的 BCD 数码
 rain_gauge RAIN(
