@@ -1,9 +1,9 @@
+
 //==============================================================
 // lcd_hd44780_ascii_8bit_8x1.v
 //  - 8-bit HD44780 LCD
 //  - 8 columns, 1 line
 //  - Receive external ASCII code and display
-//  - Added setup (40ns) and hold (10ns) time
 //==============================================================
 
 timeunit 1ns;
@@ -27,19 +27,13 @@ module lcd #(
 
 assign lcd_rw = 1'b0;   
 
-//--------------------------------------------------------------
-// 计算对应的 setup/hold 周期数
-//--------------------------------------------------------------
-localparam integer SETUP_CYC = (CLK_HZ / 1_000_000_000 * 40) == 0 ? 1 : (CLK_HZ / 1_000_000_000 * 40); // 40ns
-localparam integer HOLD_CYC  = (CLK_HZ / 1_000_000_000 * 10) == 0 ? 1 : (CLK_HZ / 1_000_000_000 * 10); // 10ns
-
 localparam integer PWRON_WAIT_CYC = (CLK_HZ * 40) / 1000;
 localparam integer WAIT_5MS_CYC   = (CLK_HZ * 5)  / 1000;
 localparam integer WAIT_1MS_CYC   = (CLK_HZ * 1)  / 1000;
 localparam integer WAIT_SHORT_CYC = 3;
 
 //--------------------------------------------------------------
-// FSM 定义
+// FSM definition (placed at top to avoid forward reference errors)
 //--------------------------------------------------------------
 typedef enum logic [4:0] {
     S_RESET       = 5'd0,
@@ -57,12 +51,9 @@ typedef enum logic [4:0] {
     S_SET_ADDR    = 5'd17,
     S_WRITE_CHAR  = 5'd18,
 
-    // 底层写字节状态
     S_BYTE_SETUP  = 5'd19,
-    S_SETUP_WAIT  = 5'd20,   // 新增 setup 等待
-    S_E_HIGH      = 5'd21,
-    S_E_HOLD      = 5'd22,    // 新增 hold 等待
-    S_E_WAIT      = 5'd23
+    S_E_HIGH      = 5'd20,
+    S_E_WAIT      = 5'd21
 } state_t;
 
 state_t state, state_next;
@@ -74,9 +65,6 @@ reg        rs_to_write;
 reg [7:0] char_latched;
 reg       char_pending;
 
-//--------------------------------------------------------------
-// 字符锁存
-//--------------------------------------------------------------
 always @(posedge clk or negedge rst_n) begin
     if(!rst_n) begin
         char_latched <= 8'h20;
@@ -92,15 +80,15 @@ always @(posedge clk or negedge rst_n) begin
 end
 
 //--------------------------------------------------------------
-// 光标位置（0~7）
+// Cursor position (0~7)
 //--------------------------------------------------------------
 reg [2:0] col;
 
-// DDRAM 起始地址（单行）
+// DDRAM base address (single line)
 localparam [7:0] DDRAM_BASE = 8'h80;
 
 //--------------------------------------------------------------
-// 写字节任务
+// Write-byte task
 //--------------------------------------------------------------
 task start_write(input [7:0] b, input rs, input state_t next_state);
 begin
@@ -112,7 +100,7 @@ end
 endtask
 
 //--------------------------------------------------------------
-// 主状态机
+// Main state machine
 //--------------------------------------------------------------
 always @(posedge clk or negedge rst_n) begin
     if(!rst_n) begin
@@ -125,7 +113,7 @@ always @(posedge clk or negedge rst_n) begin
     end else begin
         case(state)
 
-        // 上电等待
+        // Power-on wait
         S_RESET: begin
             wait_cnt <= PWRON_WAIT_CYC;
             state    <= S_PWR_WAIT;
@@ -135,7 +123,7 @@ always @(posedge clk or negedge rst_n) begin
             if(wait_cnt != 0) wait_cnt <= wait_cnt - 1;
             else state <= S_CMD_30_1;
 
-        // 初始化流程
+        // Init sequence
         S_CMD_30_1: begin start_write(8'h30,0,S_WAIT_30_1); wait_cnt<=WAIT_5MS_CYC; end
         S_WAIT_30_1: if(wait_cnt!=0) wait_cnt<=wait_cnt-1; else state<=S_CMD_30_2;
 
@@ -158,14 +146,14 @@ always @(posedge clk or negedge rst_n) begin
         S_WAIT_01: if(wait_cnt!=0) wait_cnt<=wait_cnt-1; else state<=S_IDLE;
 
         //------------------------------------------------------
-        // 等待新字符
+        // Wait for new character
         //------------------------------------------------------
         S_IDLE:
             if(char_pending)
                 state <= S_SET_ADDR;
 
         //------------------------------------------------------
-        // 设置光标地址
+        // Set cursor address
         //------------------------------------------------------
         S_SET_ADDR: begin
             start_write(DDRAM_BASE + col, 0, S_WRITE_CHAR);
@@ -173,45 +161,27 @@ always @(posedge clk or negedge rst_n) begin
         end
 
         //------------------------------------------------------
-        // 写字符
+        // Write character
         //------------------------------------------------------
         S_WRITE_CHAR: begin
             start_write(char_latched, 1, S_IDLE);
             wait_cnt <= WAIT_SHORT_CYC;
 
-            // 光标移动
+            // Cursor advance
             if(col == COLS-1)
-                col <= 3'd0;   // 回卷
+                col <= 3'd0;   // wrap
             else
                 col <= col + 1;
         end
 
         //------------------------------------------------------
-        // 底层写时序
+        // Low-level write timing
         //------------------------------------------------------
         S_BYTE_SETUP: begin
             lcd_data <= byte_to_write;
             lcd_rs   <= rs_to_write;
-            lcd_e    <= 1'b0;         // 保持E低
-            wait_cnt <= SETUP_CYC;    // 等待 setup
-            state    <= S_SETUP_WAIT;
-        end
-
-        S_SETUP_WAIT: begin
-            if(wait_cnt != 0)
-                wait_cnt <= wait_cnt - 1;
-            else begin
-                lcd_e <= 1'b1;          // 数据稳定后拉高E
-                wait_cnt <= HOLD_CYC;   // 保持 hold 时间
-                state <= S_E_HOLD;
-            end
-        end
-
-        S_E_HOLD: begin
-            if(wait_cnt != 0)
-                wait_cnt <= wait_cnt - 1;
-            else
-                state <= S_E_HIGH;
+            lcd_e    <= 1'b1;
+            state    <= S_E_HIGH;
         end
 
         S_E_HIGH: begin
