@@ -9,6 +9,9 @@
 //  用法（以雨量 ddd.ddmm 为例）见文件末尾 weather_rain_lcd_top
 //==============================================================
 
+timeunit 1ns;
+timeprecision 100ps;
+
 module lcd_formatter_8x1 #(
     parameter int CLK_HZ = 32768,
     parameter int COLS   = 8,
