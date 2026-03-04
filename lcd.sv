@@ -5,6 +5,10 @@
 //  - 8 columns, 1 line
 //  - Receive external ASCII code and display
 //==============================================================
+
+timeunit 1ns;
+timeprecision 100ps;
+
 module lcd #(
     parameter integer CLK_HZ = 32768,
     parameter integer COLS   = 8   
@@ -28,33 +32,8 @@ localparam integer WAIT_5MS_CYC   = (CLK_HZ * 5)  / 1000;
 localparam integer WAIT_1MS_CYC   = (CLK_HZ * 1)  / 1000;
 localparam integer WAIT_SHORT_CYC = 3;
 
-reg [7:0] char_latched;
-reg       char_pending;
-
-always @(posedge clk or negedge rst_n) begin
-    if(!rst_n) begin
-        char_latched <= 8'h20;
-        char_pending <= 1'b0;
-    end else begin
-        if(ascii_valid) begin
-            char_latched <= ascii_in;
-            char_pending <= 1'b1;
-        end else if(char_pending && state == S_WRITE_CHAR) begin
-            char_pending <= 1'b0;
-        end
-    end
-end
-
 //--------------------------------------------------------------
-// 光标位置（0~7）
-//--------------------------------------------------------------
-reg [2:0] col;
-
-// DDRAM 起始地址（单行）
-localparam [7:0] DDRAM_BASE = 8'h80;
-
-//--------------------------------------------------------------
-// FSM 定义
+// FSM 定义（提前到文件前面，避免编译器对前向引用报错）
 //--------------------------------------------------------------
 typedef enum logic [4:0] {
     S_RESET       = 0,
@@ -82,6 +61,31 @@ state_t state, state_next;
 reg [15:0] wait_cnt;
 reg [7:0]  byte_to_write;
 reg        rs_to_write;
+
+reg [7:0] char_latched;
+reg       char_pending;
+
+always @(posedge clk or negedge rst_n) begin
+    if(!rst_n) begin
+        char_latched <= 8'h20;
+        char_pending <= 1'b0;
+    end else begin
+        if(ascii_valid) begin
+            char_latched <= ascii_in;
+            char_pending <= 1'b1;
+        end else if(char_pending && state == S_WRITE_CHAR) begin
+            char_pending <= 1'b0;
+        end
+    end
+end
+
+//--------------------------------------------------------------
+// 光标位置（0~7）
+//--------------------------------------------------------------
+reg [2:0] col;
+
+// DDRAM 起始地址（单行）
+localparam [7:0] DDRAM_BASE = 8'h80;
 
 //--------------------------------------------------------------
 // 写字节任务
