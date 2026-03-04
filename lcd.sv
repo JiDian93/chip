@@ -1,9 +1,9 @@
-
 //==============================================================
 // lcd_hd44780_ascii_8bit_8x1.v
 //  - 8-bit HD44780 LCD
 //  - 8 columns, 1 line
 //  - Receive external ASCII code and display
+//  - Added setup (40ns) and hold (10ns) time
 //==============================================================
 
 timeunit 1ns;
@@ -27,33 +27,42 @@ module lcd #(
 
 assign lcd_rw = 1'b0;   
 
+//--------------------------------------------------------------
+// 计算对应的 setup/hold 周期数
+//--------------------------------------------------------------
+localparam integer SETUP_CYC = (CLK_HZ / 1_000_000_000 * 40) == 0 ? 1 : (CLK_HZ / 1_000_000_000 * 40); // 40ns
+localparam integer HOLD_CYC  = (CLK_HZ / 1_000_000_000 * 10) == 0 ? 1 : (CLK_HZ / 1_000_000_000 * 10); // 10ns
+
 localparam integer PWRON_WAIT_CYC = (CLK_HZ * 40) / 1000;
 localparam integer WAIT_5MS_CYC   = (CLK_HZ * 5)  / 1000;
 localparam integer WAIT_1MS_CYC   = (CLK_HZ * 1)  / 1000;
 localparam integer WAIT_SHORT_CYC = 3;
 
 //--------------------------------------------------------------
-// FSM 定义（提前到文件前面，避免编译器对前向引用报错）
+// FSM 定义
 //--------------------------------------------------------------
 typedef enum logic [4:0] {
-    S_RESET       = 0,
-    S_PWR_WAIT    = 1,
+    S_RESET       = 5'd0,
+    S_PWR_WAIT    = 5'd1,
 
-    S_CMD_30_1    = 2,  S_WAIT_30_1 = 3,
-    S_CMD_30_2    = 4,  S_WAIT_30_2 = 5,
-    S_CMD_30_3    = 6,  S_WAIT_30_3 = 7,
-    S_CMD_38      = 8,  S_WAIT_38   = 9,
-    S_CMD_0C      = 10, S_WAIT_0C   = 11,
-    S_CMD_06      = 12, S_WAIT_06   = 13,
-    S_CMD_01      = 14, S_WAIT_01   = 15,
+    S_CMD_30_1    = 5'd2,  S_WAIT_30_1 = 5'd3,
+    S_CMD_30_2    = 5'd4,  S_WAIT_30_2 = 5'd5,
+    S_CMD_30_3    = 5'd6,  S_WAIT_30_3 = 5'd7,
+    S_CMD_38      = 5'd8,  S_WAIT_38   = 5'd9,
+    S_CMD_0C      = 5'd10, S_WAIT_0C   = 5'd11,
+    S_CMD_06      = 5'd12, S_WAIT_06   = 5'd13,
+    S_CMD_01      = 5'd14, S_WAIT_01   = 5'd15,
 
-    S_IDLE        = 16,
-    S_SET_ADDR    = 17,
-    S_WRITE_CHAR  = 18,
+    S_IDLE        = 5'd16,
+    S_SET_ADDR    = 5'd17,
+    S_WRITE_CHAR  = 5'd18,
 
-    S_BYTE_SETUP  = 19,
-    S_E_HIGH      = 20,
-    S_E_WAIT      = 21
+    // 底层写字节状态
+    S_BYTE_SETUP  = 5'd19,
+    S_SETUP_WAIT  = 5'd20,   // 新增 setup 等待
+    S_E_HIGH      = 5'd21,
+    S_E_HOLD      = 5'd22,    // 新增 hold 等待
+    S_E_WAIT      = 5'd23
 } state_t;
 
 state_t state, state_next;
@@ -65,6 +74,9 @@ reg        rs_to_write;
 reg [7:0] char_latched;
 reg       char_pending;
 
+//--------------------------------------------------------------
+// 字符锁存
+//--------------------------------------------------------------
 always @(posedge clk or negedge rst_n) begin
     if(!rst_n) begin
         char_latched <= 8'h20;
@@ -180,8 +192,26 @@ always @(posedge clk or negedge rst_n) begin
         S_BYTE_SETUP: begin
             lcd_data <= byte_to_write;
             lcd_rs   <= rs_to_write;
-            lcd_e    <= 1'b1;
-            state    <= S_E_HIGH;
+            lcd_e    <= 1'b0;         // 保持E低
+            wait_cnt <= SETUP_CYC;    // 等待 setup
+            state    <= S_SETUP_WAIT;
+        end
+
+        S_SETUP_WAIT: begin
+            if(wait_cnt != 0)
+                wait_cnt <= wait_cnt - 1;
+            else begin
+                lcd_e <= 1'b1;          // 数据稳定后拉高E
+                wait_cnt <= HOLD_CYC;   // 保持 hold 时间
+                state <= S_E_HOLD;
+            end
+        end
+
+        S_E_HOLD: begin
+            if(wait_cnt != 0)
+                wait_cnt <= wait_cnt - 1;
+            else
+                state <= S_E_HIGH;
         end
 
         S_E_HIGH: begin
