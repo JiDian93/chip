@@ -261,7 +261,7 @@ assign DB_Out     = lcd_data;
 assign DB_nEnable = 1'b0; // Always drive data bus
 
 // anemometer module
-anemometer_slots_8x1 u_ane(
+anemometer u_ane(
   .clk(clk), .rst_n(rst_n), .anemo_sw(anemo_sw),
   .slot_type(slot_type), .slot_data(slot_data),
   .wind_tenths()
