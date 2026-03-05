@@ -2,7 +2,7 @@
 //
 // rain_gauge module
 //
-//  从 nRain 脉冲统计总降雨量，并输出 ddd.dd mm 形式的 BCD 数码
+//  Counts total rainfall from nRain pulses and outputs BCD in ddd.dd mm format
 //
 ///////////////////////////////////////////////////////////////////////
 
@@ -11,104 +11,108 @@ module rain_gauge(
   input  logic Clock,
   input  logic nReset,
 
-  // Start/Adjust 按键（低有效），用于清零总降雨量
+  // Start/Adjust key (active low), clears total rainfall
   input  logic nStart,
 
-  // 雨量传感器输入脉冲（低有效）
+  // Rain sensor input pulse (active low)
   input  logic nRain,
 
-  // 累计的脉冲个数
+  // Accumulated pulse count
   output logic [15:0] total_rain_pulses,
 
-  // ddd.dd mm 形式的 5 个 BCD 数码：整数部分 3 位 + 小数部分 2 位
+  // 4 BCD digits in ddd.d mm format: 3 integer + 1 fractional
   output logic [3:0] rain_hundreds_bcd,
   output logic [3:0] rain_tens_bcd,
   output logic [3:0] rain_units_bcd,
-  output logic [3:0] rain_tenths_bcd,
-  output logic [3:0] rain_hundredths_bcd
+  output logic [3:0] rain_tenths_bcd
 
   );
 
 timeunit 1ns;
 timeprecision 100ps;
 
-// 记录上一拍的 nRain，用于边沿检测
+// Previous-cycle inputs for edge detection
 logic prev_nRain;
+logic prev_nStart;
 
-// 单稳态去抖计数器（25ms @ 32.768kHz = 820 个周期）
-// 需要 10 位计数器 (2^10 = 1024 > 820)
+// Monostable debounce counter (25ms @ 32.768kHz = 820 cycles)
+// 10-bit counter needed (2^10 = 1024 > 820)
 localparam int DEBOUNCE_COUNT = 820;
 logic [9:0] debounce_counter;
+logic [9:0] start_debounce_counter;
 
-// 中间计算用：以 0.01mm 为单位的总雨量 (mm*100)
-int unsigned rain_01mm;
-int unsigned value_01mm;
+// Intermediate: total rain in 0.1mm units (mm*10)
+int unsigned rain_1mm;
+int unsigned value_1mm;
 
-// 统计 nRain 脉冲个数；nReset 为异步清零，Start/Adjust (nStart) 为同步清零
-// 单稳态去抖：检测到下降沿后启动定时器，定时器运行期间忽略输入
+// Count nRain pulses; nReset = async clear, Start/Adjust (nStart) = sync clear
+// Monostable debounce: start timer on falling edge, ignore input while timer runs
 always_ff @( posedge Clock, negedge nReset )
   if ( ! nReset )
     begin
-      total_rain_pulses <= '0;
-      prev_nRain        <= 1'b1;
-      debounce_counter  <= '0;
+      total_rain_pulses       <= '0;
+      prev_nRain              <= 1'b1;
+      prev_nStart             <= 1'b1;
+      debounce_counter        <= '0;
+      start_debounce_counter  <= '0;
     end
   else
     begin
-      // 同步记录上一拍的 nRain
-      prev_nRain <= nRain;
+      // Latch previous-cycle inputs
+      prev_nRain  <= nRain;
+      prev_nStart <= nStart;
 
-      // Start/Adjust 按键同步清零总降雨量计数
-      if ( ! nStart )
+      // Start/Adjust key: monostable debounce, clear on falling edge only
+      if ( start_debounce_counter != '0 )
+        start_debounce_counter <= start_debounce_counter - 1'b1;
+      else if ( prev_nStart && ! nStart )
         begin
-          total_rain_pulses <= '0;
+          total_rain_pulses      <= '0;
+          start_debounce_counter <= DEBOUNCE_COUNT;
         end
-      // 去抖计数器非零时递减，忽略输入
-      else if ( debounce_counter != '0 )
-        begin
-          debounce_counter <= debounce_counter - 1'b1;
-        end
-      // 去抖计数器为零时，检测 nRain 的下降沿（从 1 变为 0 视为一次脉冲）
-      else if ( prev_nRain && ! nRain )
+
+      // nRain: while debounce counter non-zero, decrement and ignore input
+      if ( debounce_counter != '0 )
+        debounce_counter <= debounce_counter - 1'b1;
+      // When debounce is zero and no Start edge this cycle, detect nRain falling edge
+      else if ( prev_nRain && ! nRain && ( prev_nStart || nStart ) )
         begin
           total_rain_pulses <= total_rain_pulses + 1'b1;
-          debounce_counter  <= DEBOUNCE_COUNT;  // 启动单稳态定时器
+          debounce_counter  <= DEBOUNCE_COUNT;
         end
     end
 
-// 将脉冲数换算成 ddd.dd mm 形式所需的 5 个 BCD 数码
-// 1 脉冲 = 0.28mm = 28 × 0.01mm
-// rain_01mm 范围限制在 0 ～ 999.99mm 之间，对应 0 ～ 99999 (mm*100)
+// Convert pulse count to 4 BCD digits for ddd.d mm format
+// 1 pulse = 0.28mm = 28 × 0.01mm
+// Round to 0.1mm: (pulses * 28 + 5) / 10
+// rain_1mm clamped to 0..999.9mm, i.e. 0..9999 (mm*10)
 always_comb
   begin
-    // 以 0.01mm 为单位计算雨量
-    rain_01mm = total_rain_pulses * 28;
+    // Rain in 0.1mm units with rounding
+    rain_1mm = (total_rain_pulses * 28 + 5) / 10;
 
-    // 饱和到 999.99mm
-    if ( rain_01mm > 99999 )
-      rain_01mm = 99999;
+    // Saturate to 999.9mm
+    if ( rain_1mm > 9999 )
+      rain_1mm = 9999;
 
-    value_01mm = rain_01mm;
+    value_1mm = rain_1mm;
 
-    // 小数第二位 (0.01mm)
-    rain_hundredths_bcd = value_01mm % 10;
-    value_01mm          = value_01mm / 10;
+    // Tenths (0.1mm)
+    rain_tenths_bcd = value_1mm % 10;
+    value_1mm       = value_1mm / 10;
 
-    // 小数第一位 (0.1mm)
-    rain_tenths_bcd = value_01mm % 10;
-    value_01mm      = value_01mm / 10;
+    // Units
+    rain_units_bcd = value_1mm % 10;
+    value_1mm      = value_1mm / 10;
 
-    // 个位
-    rain_units_bcd = value_01mm % 10;
-    value_01mm     = value_01mm / 10;
+    // Tens
+    rain_tens_bcd = value_1mm % 10;
+    value_1mm     = value_1mm / 10;
 
-    // 十位
-    rain_tens_bcd = value_01mm % 10;
-    value_01mm    = value_01mm / 10;
-
-    // 百位
-    rain_hundreds_bcd = value_01mm % 10;
+    // Hundreds
+    rain_hundreds_bcd = value_1mm % 10;
   end
 
 endmodule
+
 
