@@ -22,10 +22,12 @@ module lcd #(
     output reg  [7:0] lcd_data,
     output reg        lcd_rs,
     output wire       lcd_rw,
-    output reg        lcd_e
+    output reg        lcd_e,
+
+    output wire       lcd_init_done
 );
 
-assign lcd_rw = 1'b0;   
+assign lcd_rw = 1'b0;
 
 localparam integer PWRON_WAIT_CYC = (CLK_HZ * 40) / 1000;
 localparam integer WAIT_5MS_CYC   = (CLK_HZ * 5)  / 1000;
@@ -64,13 +66,22 @@ reg        rs_to_write;
 
 reg [7:0] char_latched;
 reg       char_pending;
+reg       init_done;
+
+assign lcd_init_done = init_done;
 
 always @(posedge clk or negedge rst_n) begin
     if(!rst_n) begin
         char_latched <= 8'h20;
         char_pending <= 1'b0;
+        init_done    <= 1'b0;
     end else begin
-        if(ascii_valid) begin
+        // Set init_done when LCD initialization is complete (entering S_IDLE for first time)
+        if(state == S_WAIT_01 && wait_cnt == 0)
+            init_done <= 1'b1;
+
+        // Only latch characters after initialization is complete
+        if(init_done && ascii_valid) begin
             char_latched <= ascii_in;
             char_pending <= 1'b1;
         end else if(char_pending && state == S_WRITE_CHAR) begin
