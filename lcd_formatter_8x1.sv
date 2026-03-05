@@ -1,12 +1,12 @@
 //==============================================================
 // lcd_formatter_8x1.sv
-//  通用“数字/字符槽位 → ASCII 流 → 你的 lcd 模块”的格式化与推送模块
+//  Generic "digit/char slot -> ASCII stream -> LCD module" formatter and pusher
 //
-//  - 适配你现有的 lcd 模块接口：ascii_in + ascii_valid
-//  - 支持 8 个显示槽位（8x1 LCD）
-//  - 每个槽位可选：BCD 数字(0~9) 或 直接 ASCII 字符
+//  - Fits existing LCD interface: ascii_in + ascii_valid
+//  - 8 display slots (8x1 LCD)
+//  - Each slot: BCD digit (0~9) or direct ASCII
 //
-//  用法（以雨量 ddd.ddmm 为例）见文件末尾 weather_rain_lcd_top
+//  Usage (e.g. rain ddd.ddmm) see weather_rain_lcd_top at end of file
 //==============================================================
 
 timeunit 1ns;
@@ -15,21 +15,24 @@ timeprecision 100ps;
 module lcd_formatter_8x1 #(
     parameter int CLK_HZ = 32768,
     parameter int COLS   = 8,
-    parameter int CHAR_PERIOD_MS = 2   // 每个字符发送间隔（毫秒），建议 1~5ms
+    parameter int CHAR_PERIOD_MS = 2   // Inter-character send interval (ms), suggest 1~5ms
 )(
     input  logic clk,
     input  logic rst_n,
 
-    // 每个槽位 2bit 类型：00=BCD_DIGIT, 01=ASCII
+    // LCD ready signal: formatter waits until LCD initialization is complete
+    input  logic lcd_ready,
+
+    // Per-slot 2bit type: 00=BCD_DIGIT, 01=ASCII
     input  logic [1:0] slot_type [COLS],
-    // 每个槽位 8bit 数据：若 BCD 只看低 4 位；若 ASCII 用全 8 位
+    // Per-slot 8bit data: BCD uses low 4 bits only; ASCII uses full 8 bits
     input  logic [7:0] slot_data [COLS],
 
     output logic [7:0] ascii_out,
     output logic       ascii_valid
 );
 
-    // 计算字符发送节拍：CHAR_PERIOD_MS 毫秒一次
+    // Character send tick: once every CHAR_PERIOD_MS ms
     localparam int CHAR_PERIOD_CYC = (CLK_HZ * CHAR_PERIOD_MS) / 1000;
     localparam int TICK_W = (CHAR_PERIOD_CYC <= 1) ? 1 : $clog2(CHAR_PERIOD_CYC + 1);
 
@@ -43,7 +46,7 @@ module lcd_formatter_8x1 #(
             tick_cnt <= (CHAR_PERIOD_CYC[TICK_W-1:0] == '0) ? '0 : CHAR_PERIOD_CYC[TICK_W-1:0];
         end else begin
             if(CHAR_PERIOD_CYC <= 1) begin
-                tick_cnt <= '0; // 每个时钟都 tick（不推荐，但防止除零/位宽问题）
+                tick_cnt <= '0; // Tick every clock (not recommended; avoids div-by-zero/width issues)
             end else begin
                 if(tick_cnt != 0) tick_cnt <= tick_cnt - 1'b1;
                 else              tick_cnt <= CHAR_PERIOD_CYC[TICK_W-1:0];
@@ -51,11 +54,11 @@ module lcd_formatter_8x1 #(
         end
     end
 
-    // 当前输出的列索引
+    // Current output column index
     localparam int IDX_W = (COLS <= 2) ? 1 : $clog2(COLS);
     logic [IDX_W-1:0] idx;
 
-    // BCD 转 ASCII
+    // BCD to ASCII
     function automatic logic [7:0] bcd_to_ascii(input logic [3:0] bcd);
         if(bcd <= 4'd9) bcd_to_ascii = 8'd48 + bcd; // '0' + bcd
         else            bcd_to_ascii = 8'h3F;       // '?'
@@ -64,12 +67,13 @@ module lcd_formatter_8x1 #(
     always_ff @(posedge clk or negedge rst_n) begin
         if(!rst_n) begin
             idx         <= '0;
-            ascii_out   <= 8'h20; // 空格
+            ascii_out   <= 8'h20; // space
             ascii_valid <= 1'b0;
         end else begin
             ascii_valid <= 1'b0;
 
-            if(tick) begin
+            // Only start sending when LCD is ready (initialization complete)
+            if(lcd_ready && tick) begin
                 unique case(slot_type[idx])
                     2'b00: ascii_out <= bcd_to_ascii(slot_data[idx][3:0]); // BCD digit
                     2'b01: ascii_out <= slot_data[idx];                    // direct ASCII
