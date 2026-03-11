@@ -262,7 +262,7 @@ always_comb begin
 end
 
 //==========================================================
-// Wind direction slots (e.g. "  NNW   ")
+// Wind direction slots (last 3 chars, e.g. "     NNW")
 //==========================================================
 
 always_comb begin
@@ -270,14 +270,14 @@ always_comb begin
     winddir_slot_type[i] = 2'b01;
     winddir_slot_data[i] = 8'h20;
   end
-  // Center 3-character compass string
-  winddir_slot_type[2] = 2'b01; winddir_slot_data[2] = wind_char0;
-  winddir_slot_type[3] = 2'b01; winddir_slot_data[3] = wind_char1;
-  winddir_slot_type[4] = 2'b01; winddir_slot_data[4] = wind_char2;
+  // Put compass string in last three columns
+  winddir_slot_type[5] = 2'b01; winddir_slot_data[5] = wind_char0;
+  winddir_slot_type[6] = 2'b01; winddir_slot_data[6] = wind_char1;
+  winddir_slot_type[7] = 2'b01; winddir_slot_data[7] = wind_char2;
 end
 
 //==========================================================
-// Elapsed time slots ("HH:MM   ")
+// Elapsed time slots (last 5 chars, "HH:MM")
 //==========================================================
 
 always_comb begin
@@ -286,17 +286,17 @@ always_comb begin
     elapsed_slot_data[i] = 8'h20;
   end
 
+  // Use last five columns: indices 3..7 -> "HH:MM"
   // Hours tens: blank if 0, otherwise BCD digit
   if (et_hour_tens == 4'd0) begin
-    elapsed_slot_type[0] = 2'b01; elapsed_slot_data[0] = 8'h20;
+    elapsed_slot_type[3] = 2'b01; elapsed_slot_data[3] = 8'h20;
   end else begin
-    elapsed_slot_type[0] = 2'b00; elapsed_slot_data[0] = {4'b0000, et_hour_tens};
+    elapsed_slot_type[3] = 2'b00; elapsed_slot_data[3] = {4'b0000, et_hour_tens};
   end
-  elapsed_slot_type[1] = 2'b00; elapsed_slot_data[1] = {4'b0000, et_hour_units};
-  elapsed_slot_type[2] = 2'b01; elapsed_slot_data[2] = ":";
-  elapsed_slot_type[3] = 2'b00; elapsed_slot_data[3] = {4'b0000, et_min_tens};
-  elapsed_slot_type[4] = 2'b00; elapsed_slot_data[4] = {4'b0000, et_min_units};
-  // Remaining slots stay as spaces
+  elapsed_slot_type[4] = 2'b00; elapsed_slot_data[4] = {4'b0000, et_hour_units};
+  elapsed_slot_type[5] = 2'b01; elapsed_slot_data[5] = ":";
+  elapsed_slot_type[6] = 2'b00; elapsed_slot_data[6] = {4'b0000, et_min_tens};
+  elapsed_slot_type[7] = 2'b00; elapsed_slot_data[7] = {4'b0000, et_min_units};
 end
 
 //==========================================================
