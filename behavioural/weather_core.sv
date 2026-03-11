@@ -166,6 +166,7 @@ lcd #(
 
 // Wind direction: SPI to vane ADC (AD7466) + nearest-neighbour decode + 3 LCD chars
 logic [7:0] wind_char0, wind_char1, wind_char2;
+logic [1:0] wind_n_chars;  // number of non-space wind direction characters (0..3)
 
 wind_direction VANE(
   .Clock,
@@ -269,46 +270,55 @@ end
 //==========================================================
 
 always_comb begin
+  // Default all 8 columns to space ASCII
   for (int i = 0; i < LCD_COLS; i++) begin
-    winddir_slot_type[i] = 2'b01;
-    winddir_slot_data[i] = 8'h20;
+    winddir_slot_type[i] = 2'b01;   // direct ASCII
+    winddir_slot_data[i] = 8'h20;   // space
   end
 
   // Count how many non-space chars we have
-  int unsigned n_chars;
-  n_chars = 0;
-  if (wind_char0 != 8'h20) n_chars++;
-  if (wind_char1 != 8'h20) n_chars++;
-  if (wind_char2 != 8'h20) n_chars++;
+  wind_n_chars = 2'd0;
+  if (wind_char0 != 8'h20) wind_n_chars++;
+  if (wind_char1 != 8'h20) wind_n_chars++;
+  if (wind_char2 != 8'h20) wind_n_chars++;
 
-  case (n_chars)
-    0: ; // keep all spaces
+  case (wind_n_chars)
+    0: begin
+      // keep all spaces
+    end
+
     1: begin
-      // use last column only
-      if (wind_char2 != 8'h20) begin
-        winddir_slot_data[7] = wind_char2;
-      end else if (wind_char1 != 8'h20) begin
+      // Exactly one letter: put that single letter in the last column
+      if (wind_char0 != 8'h20 &&
+          wind_char1 == 8'h20 &&
+          wind_char2 == 8'h20) begin
+        winddir_slot_data[7] = wind_char0;
+      end else if (wind_char1 != 8'h20 &&
+                   wind_char0 == 8'h20 &&
+                   wind_char2 == 8'h20) begin
         winddir_slot_data[7] = wind_char1;
       end else begin
-        winddir_slot_data[7] = wind_char0;
+        winddir_slot_data[7] = wind_char2;
       end
     end
+
     2: begin
-      // use last 2 columns
+      // Two letters: right-align into last two columns
       if (wind_char0 == 8'h20) begin
         // chars are [1],[2]
         winddir_slot_data[6] = wind_char1;
         winddir_slot_data[7] = wind_char2;
-      end else if (wind_char2 == 8'h20) begin
+      end else if (wind_char1 == 8'h20) begin
+        // chars are [0],[2]
+        winddir_slot_data[6] = wind_char0;
+        winddir_slot_data[7] = wind_char2;
+      end else begin
         // chars are [0],[1]
         winddir_slot_data[6] = wind_char0;
         winddir_slot_data[7] = wind_char1;
-      end else begin
-        // default: take last two in order [1],[2]
-        winddir_slot_data[6] = wind_char1;
-        winddir_slot_data[7] = wind_char2;
       end
     end
+
     default: begin
       // 3 or more (we only have 3), right-align all 3
       winddir_slot_data[5] = wind_char0;
