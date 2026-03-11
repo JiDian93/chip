@@ -262,7 +262,10 @@ always_comb begin
 end
 
 //==========================================================
-// Wind direction slots (last 3 chars, e.g. "     NNW")
+// Wind direction slots (right-aligned in last columns)
+//  - If 1 non-space letter  -> at last column
+//  - If 2 non-space letters -> at last 2 columns
+//  - If 3 non-space letters -> at last 3 columns
 //==========================================================
 
 always_comb begin
@@ -270,10 +273,49 @@ always_comb begin
     winddir_slot_type[i] = 2'b01;
     winddir_slot_data[i] = 8'h20;
   end
-  // Put compass string in last three columns
-  winddir_slot_type[5] = 2'b01; winddir_slot_data[5] = wind_char0;
-  winddir_slot_type[6] = 2'b01; winddir_slot_data[6] = wind_char1;
-  winddir_slot_type[7] = 2'b01; winddir_slot_data[7] = wind_char2;
+
+  // Count how many non-space chars we have
+  int unsigned n_chars;
+  n_chars = 0;
+  if (wind_char0 != 8'h20) n_chars++;
+  if (wind_char1 != 8'h20) n_chars++;
+  if (wind_char2 != 8'h20) n_chars++;
+
+  case (n_chars)
+    0: ; // keep all spaces
+    1: begin
+      // use last column only
+      if (wind_char2 != 8'h20) begin
+        winddir_slot_data[7] = wind_char2;
+      end else if (wind_char1 != 8'h20) begin
+        winddir_slot_data[7] = wind_char1;
+      end else begin
+        winddir_slot_data[7] = wind_char0;
+      end
+    end
+    2: begin
+      // use last 2 columns
+      if (wind_char0 == 8'h20) begin
+        // chars are [1],[2]
+        winddir_slot_data[6] = wind_char1;
+        winddir_slot_data[7] = wind_char2;
+      end else if (wind_char2 == 8'h20) begin
+        // chars are [0],[1]
+        winddir_slot_data[6] = wind_char0;
+        winddir_slot_data[7] = wind_char1;
+      end else begin
+        // default: take last two in order [1],[2]
+        winddir_slot_data[6] = wind_char1;
+        winddir_slot_data[7] = wind_char2;
+      end
+    end
+    default: begin
+      // 3 or more (we only have 3), right-align all 3
+      winddir_slot_data[5] = wind_char0;
+      winddir_slot_data[6] = wind_char1;
+      winddir_slot_data[7] = wind_char2;
+    end
+  endcase
 end
 
 //==========================================================
@@ -359,6 +401,49 @@ always_comb begin
     endcase
   end
 end
+
+//==========================================================
+// Simulation-only: print LCD line on mode change
+//==========================================================
+`ifndef SYNTHESIS
+function automatic [7:0] slot_to_ascii(input logic [1:0] t, input logic [7:0] d);
+  begin
+    case (t)
+      2'b00: begin
+        // BCD digit 0–9
+        if (d[3:0] <= 4'd9) slot_to_ascii = 8'd48 + d[3:0];
+        else                slot_to_ascii = 8'h3F; // '?'
+      end
+      2'b01: slot_to_ascii = d;          // direct ASCII
+      default: slot_to_ascii = 8'h20;    // space
+    endcase
+  end
+endfunction
+
+logic [2:0] dbg_prev_mode;
+logic [7:0] dbg_line [0:LCD_COLS-1];
+integer     dbg_i;
+
+always_ff @(posedge Clock or negedge nReset) begin
+  if (!nReset) begin
+    dbg_prev_mode <= 3'd7; // force first print after reset
+  end else begin
+    if (display_mode != dbg_prev_mode) begin
+      // Build current LCD line from selected slots
+      for (dbg_i = 0; dbg_i < LCD_COLS; dbg_i = dbg_i + 1) begin
+        dbg_line[dbg_i] = slot_to_ascii(lcd_slot_type[dbg_i], lcd_slot_data[dbg_i]);
+      end
+      // Print one line per mode change
+      $write("MODE%0d LCD: ", display_mode);
+      for (dbg_i = 0; dbg_i < LCD_COLS; dbg_i = dbg_i + 1) begin
+        $write("%c", dbg_line[dbg_i]);
+      end
+      $write("\n");
+      dbg_prev_mode <= display_mode;
+    end
+  end
+end
+`endif
 
 // this module makes no attempt to communicate with the LCD
 
