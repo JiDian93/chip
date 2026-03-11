@@ -1,10 +1,13 @@
-//==============================================================
+
+​//==============================================================
 // anemometer.sv
 //  - Cup anemometer switch -> instantaneous wind speed (m/s)
 //  - 1.492 mph produces 1 closure per second (1 Hz)
 //  - Output to lcd_formatter_8x1 as 8 slots:
 //      " DD.Dm/s" (8 chars)
 //==============================================================
+
+`timescale 1ns/100ps
 
 module anemometer #(
     parameter int unsigned CLK_HZ     = 32768,
@@ -27,7 +30,9 @@ module anemometer #(
     output logic [15:0] wind_tenths       // 0.1 m/s units (e.g. 53 => 5.3 m/s)
 );
 
+    // ----------------------------------------------------------
     // 1) Sync + edge detect
+    // ----------------------------------------------------------
     logic sw_ff1, sw_ff2;
     always_ff @(posedge clk or negedge rst_n) begin
         if(!rst_n) begin
@@ -42,7 +47,9 @@ module anemometer #(
     // rising edge counts one closure event
     wire sw_rise = sw_ff1 & ~sw_ff2;
 
+    // ----------------------------------------------------------
     // 2) Measure period between pulses (in clk cycles)
+    // ----------------------------------------------------------
     localparam int unsigned TIMEOUT_CYC = TIMEOUT_S * CLK_HZ;
 
     logic [31:0] cyc_since_last;
@@ -66,6 +73,7 @@ module anemometer #(
         end
     end
 
+    // ----------------------------------------------------------
     // 3) Convert to wind speed (m/s) in tenths
     //
     // Given: 1 Hz => 1.492 mph
@@ -76,6 +84,7 @@ module anemometer #(
     // Hz = CLK_HZ / period_cycles
     // wind_tenths ≈ (667*CLK_HZ) / (100*period)
     // (with rounding, clamp to 99.9 => 999 tenths)
+    // ----------------------------------------------------------
     always_ff @(posedge clk or negedge rst_n) begin
         if(!rst_n) begin
             wind_tenths <= 16'd0;
@@ -99,11 +108,13 @@ module anemometer #(
         end
     end
 
+    // ----------------------------------------------------------
     // 4) Split into BCD digits for " DD.D"
     //    wind_tenths: 0..999
     //      tens  = floor(v/100)
     //      ones  = floor(v/10) % 10
     //      tenths= v % 10
+    // ----------------------------------------------------------
     logic [3:0] d_tens, d_ones, d_tenths;
     always_comb begin
         int unsigned v;
@@ -114,8 +125,10 @@ module anemometer #(
         d_tenths = (v % 10);        // 0..9
     end
 
-    // 5) Build 8 slots: " DD.Dm/s"
+    // ----------------------------------------------------------
+    // 5) Build 8 slots: "DD.D m/s"
     //    slot_type: 00=BCD, 01=ASCII
+    // ----------------------------------------------------------
     always_comb begin
         // default all blanks
         for (int i=0; i<COLS; i++) begin
@@ -123,16 +136,19 @@ module anemometer #(
             slot_data[i] = 8'h20; // ' '
         end
 
-        // " DD.Dm/s"
-        slot_type[0] = 2'b01; slot_data[0] = 8'h20;       // leading blank
-        slot_type[1] = 2'b00; slot_data[1] = {4'h0, d_tens};
-        slot_type[2] = 2'b00; slot_data[2] = {4'h0, d_ones};
-        slot_type[3] = 2'b01; slot_data[3] = 8'h2E;       // '.'
-        slot_type[4] = 2'b00; slot_data[4] = {4'h0, d_tenths};
+        //left-to-right mapping: "DD.D m/s"
+        if (d_tens == 4'd0) begin
+            slot_type[0] = 2'b01; slot_data[0] = 8'h20;       // leading blank
+        end else begin
+            slot_type[0] = 2'b00; slot_data[0] = {4'h0, d_tens};
+        end
+        slot_type[1] = 2'b00; slot_data[1] = {4'h0, d_ones};
+        slot_type[2] = 2'b01; slot_data[2] = 8'h2E;       // '.'
+        slot_type[3] = 2'b00; slot_data[3] = {4'h0, d_tenths};
+        slot_type[4] = 2'b01; slot_data[4] = 8'h20;       // space between value and unit
         slot_type[5] = 2'b01; slot_data[5] = "m";
         slot_type[6] = 2'b01; slot_data[6] = "/";
         slot_type[7] = 2'b01; slot_data[7] = "s";
     end
 
 endmodule
-
