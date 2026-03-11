@@ -1,7 +1,5 @@
 // This special stimulus simulates a short lived storm
 //
-// 覆盖所有模式：总雨量、瞬时风速、风向、累计时间、当前时间。
-// 在 handin 版本基础上扩展雨量与模式切换，同时保持原有风速 / 气压 / 温度波形。
 
   reg [7:0] expected_wind [0:2];
   reg [7:0] lcd_buf  [0:7];
@@ -32,11 +30,6 @@
         lcd_pos = lcd_pos + 1;
       end
     end
-
-
-  // ================================================================
-  // 风速刺激（沿用 handin 行为）
-  // ================================================================
 
   initial
     begin
@@ -73,15 +66,9 @@
     end
 
 
-  // ================================================================
-  // 其他气象刺激（扩展 handin：加上 16 方位扫描）
-  // ================================================================
-
   initial
     begin
       Rain              = 0;
-      // 起始气压设置为 1011 mb，后面快速下降到 998 mb 再回升到 1011 mb，
-      // 覆盖 998~1011 的完整范围，便于观察 Pressure 模式显示。
       SENSOR.pressure   = 1011;
       SENSOR.temperature= 10.0;
       VANE.WindDirection= S; // wind is from the South
@@ -91,13 +78,12 @@
       while (SENSOR.temperature > 8.5)
         #1.5s SENSOR.temperature = SENSOR.temperature - 0.25;
 
-      // wind changes direction (粗粒度)
+      // wind changes direction 
       #0.8s VANE.WindDirection = SSW;
       #0.8s VANE.WindDirection = SW;
       #0.8s VANE.WindDirection = W;
       #0.8s VANE.WindDirection = NW;
 
-      // 细粒度：等进入 Mode 2 (WindDirection) 后，再做 16 个方向扫描并驱动 expected_wind
       wait (mode_index == 2);
 
       expected_wind[0]=8'h20; expected_wind[1]=8'h20; expected_wind[2]="N";
@@ -123,7 +109,6 @@
       while (SENSOR.pressure > 998.0)
         #5s SENSOR.pressure = SENSOR.pressure - 0.25;
 
-      // rain storm (用作总雨量测试的一部分)
       repeat (20)
         #5s -> trigger_rain_sensor;
 
@@ -136,26 +121,16 @@
     end
 
 
-  // ================================================================
-  // 额外雨量刺激：更长时间的轻 / 中雨，用于 TotalRainfall 覆盖
-  // ================================================================
-
   initial
     begin
       start_up_delay();
-      // 轻雨：每 4s 一次
       repeat (10)
         #4s -> trigger_rain_sensor;
 
-      // 中雨：每 1s 一次
       repeat (20)
         #1s -> trigger_rain_sensor;
     end
 
-
-  // ================================================================
-  // 按键刺激：遍历所有 5 个模式，并在雨量 / 时间模式下使用 Start/Adjust 清零
-  // ================================================================
 
   initial
     begin
@@ -203,13 +178,9 @@
       // Mode 6: Temperature
       $display("-- Mode 6: Temperature --");
       -> press_mode_button;
-      // 之后继续循环到 Mode 0，由主状态机负责
     end
 
 
-  // ================================================================
-  // 时钟 / 复位 / 扫描链：与 handin 一致
-  // ================================================================
 
   initial
     begin
