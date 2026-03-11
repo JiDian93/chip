@@ -1,1 +1,2 @@
-
+./simulate -no_graphics behavioural 45s +define+stimulus=system2/storm1.sv -exit
+./simulate -no_graphics behavioural 45s  -exit
