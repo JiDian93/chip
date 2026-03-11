@@ -1,0 +1,276 @@
+///////////////////////////////////////////////////////////////////////
+//
+// weather_core module
+//
+//    this is the behavioural model of the weather station without pads
+//
+///////////////////////////////////////////////////////////////////////
+
+`include "options.sv"
+
+module weather_core(
+
+  output logic RS,
+  output logic RnW,
+  output logic En,
+
+  input [7:0] DB_In,
+  output logic [7:0] DB_Out,
+  output logic DB_nEnable,
+
+  input nMode, nStart,
+  input nRain, nWind,
+
+  output logic SPICLK, nVaneCS,
+  input MISO,
+
+  input Clock, nReset,
+  input Demo
+
+  );
+
+timeunit 1ns;
+timeprecision 100ps;
+
+//==========================================================
+// Clock divider and main FSM control
+//==========================================================
+
+logic tick_1kHz;
+logic tick_1Hz;
+
+logic [2:0] display_mode;
+logic       clear_rain_pulse;
+logic       clear_time_pulse;
+logic       in_calibration;
+logic       is_rain_calib;
+logic [1:0] calib_digit_index;
+logic       calib_increment_pulse;
+logic       in_time_setting;
+logic [1:0] time_set_field;
+logic       time_increment_pulse;
+logic       time_zero_seconds_pulse;
+
+clock_divider u_clock_divider (
+  .Clock    (Clock),
+  .nReset   (nReset),
+  .Demo     (Demo),
+  .tick_1kHz(tick_1kHz),
+  .tick_1Hz (tick_1Hz)
+);
+
+main_fsm u_main_fsm (
+  .Clock                (Clock),
+  .nReset               (nReset),
+  .tick_1kHz            (tick_1kHz),
+  .nMode                (nMode),
+  .nStart               (nStart),
+  .display_mode         (display_mode),
+  .clear_rain_pulse     (clear_rain_pulse),
+  .clear_time_pulse     (clear_time_pulse),
+  .in_calibration       (in_calibration),
+  .is_rain_calib        (is_rain_calib),
+  .calib_digit_index    (calib_digit_index),
+  .calib_increment_pulse(calib_increment_pulse),
+  .in_time_setting      (in_time_setting),
+  .time_set_field       (time_set_field),
+  .time_increment_pulse (time_increment_pulse),
+  .time_zero_seconds_pulse(time_zero_seconds_pulse)
+);
+
+// Total rainfall (count of nRain pulses) – internal to core
+logic [15:0] total_rain_pulses;
+
+// 4 BCD digits in ddd.d mm format: 3 integer + 1 fractional – internal to core
+logic [3:0] rain_hundreds_bcd;
+logic [3:0] rain_tens_bcd;
+logic [3:0] rain_units_bcd;
+logic [3:0] rain_tenths_bcd;
+
+// Rain submodule: total rainfall and ddd.d mm BCD digits
+rain_gauge RAIN(
+  .Clock,
+  .nReset,
+  .nStart,
+  .nRain,
+  .total_rain_pulses,
+  .rain_hundreds_bcd,
+  .rain_tens_bcd,
+  .rain_units_bcd,
+  .rain_tenths_bcd
+);
+
+//==========================================================
+// LCD display: 8x1 character LCD, slot definitions
+//==========================================================
+
+localparam int LCD_COLS = 8;
+
+// Per-mode slot arrays
+logic [1:0] rain_slot_type    [LCD_COLS];
+logic [7:0] rain_slot_data    [LCD_COLS];
+logic [1:0] windspd_slot_type [LCD_COLS];
+logic [7:0] windspd_slot_data [LCD_COLS];
+logic [1:0] winddir_slot_type [LCD_COLS];
+logic [7:0] winddir_slot_data [LCD_COLS];
+logic [1:0] elapsed_slot_type [LCD_COLS];
+logic [7:0] elapsed_slot_data [LCD_COLS];
+logic [1:0] time_slot_type    [LCD_COLS];
+logic [7:0] time_slot_data    [LCD_COLS];
+
+// Slot type and data fed into formatter (00 = BCD digit, 01 = ASCII)
+logic [1:0] lcd_slot_type [LCD_COLS];
+logic [7:0] lcd_slot_data [LCD_COLS];
+
+// Formatter -> HD44780 LCD ASCII stream
+logic [7:0] lcd_ascii;
+logic       lcd_ascii_valid;
+
+// LCD internal signals
+logic [7:0] lcd_data;
+logic       lcd_rs;
+logic       lcd_rw;
+logic       lcd_en;
+logic       lcd_init_done;
+
+// Slots -> ASCII stream
+lcd_formatter_8x1 #(
+  .CLK_HZ(32768),
+  .COLS(LCD_COLS),
+  .CHAR_PERIOD_MS(2)
+) u_lcd_formatter_8x1 (
+  .clk        (Clock),
+  .rst_n      (nReset),
+  .lcd_ready  (lcd_init_done),
+  .slot_type  (lcd_slot_type),
+  .slot_data  (lcd_slot_data),
+  .ascii_out  (lcd_ascii),
+  .ascii_valid(lcd_ascii_valid)
+);
+
+// ASCII stream -> HD44780 LCD timing
+lcd #(
+  .CLK_HZ(32768),
+  .COLS  (LCD_COLS)
+) u_lcd (
+  .clk          (Clock),
+  .rst_n        (nReset),
+  .ascii_in     (lcd_ascii),
+  .ascii_valid  (lcd_ascii_valid),
+  .lcd_data     (lcd_data),
+  .lcd_rs       (lcd_rs),
+  .lcd_rw       (lcd_rw),
+  .lcd_e        (lcd_en),
+  .lcd_init_done(lcd_init_done)
+);
+
+// Wind direction: SPI to vane ADC (AD7466) + nearest-neighbour decode + 3 LCD chars
+logic [7:0] wind_char0, wind_char1, wind_char2;
+
+wind_direction VANE(
+  .Clock,
+  .nReset,
+  .MISO,
+  .SPICLK,
+  .nVaneCS,
+  .char0 (wind_char0),
+  .char1 (wind_char1),
+  .char2 (wind_char2)
+);
+
+//==========================================================
+// Instantaneous wind speed (anemometer)
+//==========================================================
+
+logic [15:0] wind_tenths;
+
+anemometer #(
+  .CLK_HZ(32768),
+  .COLS  (LCD_COLS)
+) U_ANEMO (
+  .clk       (Clock),
+  .rst_n     (nReset),
+  .anemo_sw  (nWind),
+  .slot_type (windspd_slot_type),
+  .slot_data (windspd_slot_data),
+  .wind_tenths(wind_tenths)
+);
+
+//==========================================================
+// Elapsed time and time-of-day counters
+//==========================================================
+
+logic [3:0] et_hour_tens, et_hour_units;
+logic [3:0] et_min_tens,  et_min_units;
+
+elapsed_time_counter U_ELAPSED (
+  .Clock          (Clock),
+  .nReset         (nReset),
+  .tick_1Hz       (tick_1Hz),
+  .start_adjust_hit(clear_time_pulse),
+  .hour_tens      (et_hour_tens),
+  .hour_units     (et_hour_units),
+  .min_tens       (et_min_tens),
+  .min_units      (et_min_units)
+);
+
+logic [3:0] tod_hour_tens, tod_hour_units;
+logic [3:0] tod_min_tens,  tod_min_units;
+logic [3:0] tod_sec_tens,  tod_sec_units;
+
+time_counters U_TIME (
+  .Clock                (Clock),
+  .nReset               (nReset),
+  .tick_1Hz             (tick_1Hz),
+  .nClear_time          (1'b1),
+  .time_set_field       (time_set_field),
+  .time_increment_pulse (time_increment_pulse),
+  .time_zero_seconds_pulse(time_zero_seconds_pulse),
+  .hour_tens            (tod_hour_tens),
+  .hour_units           (tod_hour_units),
+  .min_tens             (tod_min_tens),
+  .min_units            (tod_min_units),
+  .sec_tens             (tod_sec_tens),
+  .sec_units            (tod_sec_units)
+);
+
+//==========================================================
+// Rain slots (ddd.d mm)
+//==========================================================
+
+always_comb begin
+  for (int i = 0; i < LCD_COLS; i++) begin
+    rain_slot_type[i] = 2'b01;
+    rain_slot_data[i] = 8'h20;
+  end
+  if (rain_hundreds_bcd == 4'd0) begin
+    rain_slot_type[0] = 2'b01; rain_slot_data[0] = 8'h20;
+  end else begin
+    rain_slot_type[0] = 2'b00; rain_slot_data[0] = {4'b0000, rain_hundreds_bcd};
+  end
+  if (rain_hundreds_bcd == 4'd0 && rain_tens_bcd == 4'd0) begin
+    rain_slot_type[1] = 2'b01; rain_slot_data[1] = 8'h20;
+  end else begin
+    rain_slot_type[1] = 2'b00; rain_slot_data[1] = {4'b0000, rain_tens_bcd};
+  end
+  rain_slot_type[2] = 2'b00; rain_slot_data[2] = {4'b0000, rain_units_bcd};
+  rain_slot_type[3] = 2'b01; rain_slot_data[3] = 8'h2E;
+  rain_slot_type[4] = 2'b00; rain_slot_data[4] = {4'b0000, rain_tenths_bcd};
+  rain_slot_type[5] = 2'b01; rain_slot_data[5] = 8'h20;
+  rain_slot_type[6] = 2'b01; rain_slot_data[6] = "m";
+  rain_slot_type[7] = 2'b01; rain_slot_data[7] = "m";
+end
+
+// this module makes no attempt to communicate with the LCD
+
+assign RS  = lcd_rs;
+assign RnW = lcd_rw;      // This design is write-only (lcd_rw is always 0)
+assign En  = lcd_en;
+
+assign DB_Out     = lcd_data;
+assign DB_nEnable = 1'b0; // Always drive data bus
+
+
+
+
+endmodule
