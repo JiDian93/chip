@@ -95,9 +95,7 @@
       #0.8s VANE.WindDirection = W;
       #0.8s VANE.WindDirection = NW;
 
-      // 细粒度：等进入 Mode 2 (WindDirection) 后，再做 16 个方向扫描并驱动 expected_wind
-      wait (mode_index == 2);
-
+      // 细粒度：16 个方向扫描并驱动 expected_wind，用于 LCD 校验
       expected_wind[0]=8'h20; expected_wind[1]=8'h20; expected_wind[2]="N";
       $display("  [set] N");
       VANE.WindDirection = N;
