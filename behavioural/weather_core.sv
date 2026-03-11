@@ -261,6 +261,105 @@ always_comb begin
   rain_slot_type[7] = 2'b01; rain_slot_data[7] = "m";
 end
 
+//==========================================================
+// Wind direction slots (e.g. "  NNW   ")
+//==========================================================
+
+always_comb begin
+  for (int i = 0; i < LCD_COLS; i++) begin
+    winddir_slot_type[i] = 2'b01;
+    winddir_slot_data[i] = 8'h20;
+  end
+  // Center 3-character compass string
+  winddir_slot_type[2] = 2'b01; winddir_slot_data[2] = wind_char0;
+  winddir_slot_type[3] = 2'b01; winddir_slot_data[3] = wind_char1;
+  winddir_slot_type[4] = 2'b01; winddir_slot_data[4] = wind_char2;
+end
+
+//==========================================================
+// Elapsed time slots ("HH:MM   ")
+//==========================================================
+
+always_comb begin
+  for (int i = 0; i < LCD_COLS; i++) begin
+    elapsed_slot_type[i] = 2'b01;
+    elapsed_slot_data[i] = 8'h20;
+  end
+
+  // Hours tens: blank if 0, otherwise BCD digit
+  if (et_hour_tens == 4'd0) begin
+    elapsed_slot_type[0] = 2'b01; elapsed_slot_data[0] = 8'h20;
+  end else begin
+    elapsed_slot_type[0] = 2'b00; elapsed_slot_data[0] = {4'b0000, et_hour_tens};
+  end
+  elapsed_slot_type[1] = 2'b00; elapsed_slot_data[1] = {4'b0000, et_hour_units};
+  elapsed_slot_type[2] = 2'b01; elapsed_slot_data[2] = ":";
+  elapsed_slot_type[3] = 2'b00; elapsed_slot_data[3] = {4'b0000, et_min_tens};
+  elapsed_slot_type[4] = 2'b00; elapsed_slot_data[4] = {4'b0000, et_min_units};
+  // Remaining slots stay as spaces
+end
+
+//==========================================================
+// Time-of-day slots ("HH:MM:SS")
+//==========================================================
+
+always_comb begin
+  for (int i = 0; i < LCD_COLS; i++) begin
+    time_slot_type[i] = 2'b01;
+    time_slot_data[i] = 8'h20;
+  end
+
+  // Hours tens: blank if 0, otherwise BCD digit
+  if (tod_hour_tens == 4'd0) begin
+    time_slot_type[0] = 2'b01; time_slot_data[0] = 8'h20;
+  end else begin
+    time_slot_type[0] = 2'b00; time_slot_data[0] = {4'b0000, tod_hour_tens};
+  end
+
+  time_slot_type[1] = 2'b00; time_slot_data[1] = {4'b0000, tod_hour_units};
+  time_slot_type[2] = 2'b01; time_slot_data[2] = ":";
+  time_slot_type[3] = 2'b00; time_slot_data[3] = {4'b0000, tod_min_tens};
+  time_slot_type[4] = 2'b00; time_slot_data[4] = {4'b0000, tod_min_units};
+  time_slot_type[5] = 2'b01; time_slot_data[5] = ":";
+  time_slot_type[6] = 2'b00; time_slot_data[6] = {4'b0000, tod_sec_tens};
+  time_slot_type[7] = 2'b00; time_slot_data[7] = {4'b0000, tod_sec_units};
+end
+
+//==========================================================
+// Mode-based LCD slot MUX
+//==========================================================
+
+always_comb begin
+  for (int j = 0; j < LCD_COLS; j++) begin
+    unique case (display_mode)
+      3'd0: begin // TotalRainfall
+        lcd_slot_type[j] = rain_slot_type[j];
+        lcd_slot_data[j] = rain_slot_data[j];
+      end
+      3'd1: begin // InstantaneousWindSpeed
+        lcd_slot_type[j] = windspd_slot_type[j];
+        lcd_slot_data[j] = windspd_slot_data[j];
+      end
+      3'd2: begin // WindDirection
+        lcd_slot_type[j] = winddir_slot_type[j];
+        lcd_slot_data[j] = winddir_slot_data[j];
+      end
+      3'd3: begin // ElapsedTime
+        lcd_slot_type[j] = elapsed_slot_type[j];
+        lcd_slot_data[j] = elapsed_slot_data[j];
+      end
+      3'd4: begin // TimeOfDay
+        lcd_slot_type[j] = time_slot_type[j];
+        lcd_slot_data[j] = time_slot_data[j];
+      end
+      default: begin
+        lcd_slot_type[j] = 2'b01;
+        lcd_slot_data[j] = 8'h20;
+      end
+    endcase
+  end
+end
+
 // this module makes no attempt to communicate with the LCD
 
 assign RS  = lcd_rs;
@@ -269,8 +368,5 @@ assign En  = lcd_en;
 
 assign DB_Out     = lcd_data;
 assign DB_nEnable = 1'b0; // Always drive data bus
-
-
-
 
 endmodule
