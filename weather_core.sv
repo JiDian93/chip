@@ -76,67 +76,6 @@ logic       lcd_rw;
 logic       lcd_en;
 logic       lcd_init_done;
 
-// Combinational: map rain BCD digits to 8 slots
-// Format: ddd.d mm (as shown in spec figure for 17.2mm)
-// Slot 0: rain_hundreds_bcd
-// Slot 1: rain_tens_bcd
-// Slot 2: rain_units_bcd
-// Slot 3: decimal point '.'
-// Slot 4: rain_tenths_bcd
-// Slot 5: space ' '
-// Slot 6: 'm'
-// Slot 7: 'm'
-integer i;
-
-always_comb begin
-  // Default: space ASCII
-  for(i = 0; i < LCD_COLS; i++) begin
-    lcd_slot_type[i] = 2'b01;
-    lcd_slot_data[i] = 8'h20;
-  end
-
-  // Slot 0: Hundreds digit - suppress leading zero
-  if(rain_hundreds_bcd == 4'd0) begin
-    lcd_slot_type[0] = 2'b01;       // ASCII space
-    lcd_slot_data[0] = 8'h20;
-  end else begin
-    lcd_slot_type[0] = 2'b00;       // BCD digit
-    lcd_slot_data[0] = {4'b0000, rain_hundreds_bcd};
-  end
-
-  // Slot 1: Tens digit - suppress if hundreds is also zero
-  if(rain_hundreds_bcd == 4'd0 && rain_tens_bcd == 4'd0) begin
-    lcd_slot_type[1] = 2'b01;       // ASCII space
-    lcd_slot_data[1] = 8'h20;
-  end else begin
-    lcd_slot_type[1] = 2'b00;       // BCD digit
-    lcd_slot_data[1] = {4'b0000, rain_tens_bcd};
-  end
-
-  // Slot 2: Units digit - always display (at least one digit before decimal)
-  lcd_slot_type[2] = 2'b00;
-  lcd_slot_data[2] = {4'b0000, rain_units_bcd};
-
-  // Slot 3: Decimal point '.'
-  lcd_slot_type[3] = 2'b01;
-  lcd_slot_data[3] = 8'h2E;
-
-  // Slot 4: Tenths digit - always display
-  lcd_slot_type[4] = 2'b00;
-  lcd_slot_data[4] = {4'b0000, rain_tenths_bcd};
-
-  // Slot 5: Space separator
-  lcd_slot_type[5] = 2'b01;
-  lcd_slot_data[5] = 8'h20;
-
-  // Slot 6-7: Unit "mm"
-  lcd_slot_type[6] = 2'b01;
-  lcd_slot_data[6] = "m";
-
-  lcd_slot_type[7] = 2'b01;
-  lcd_slot_data[7] = "m";
-end
-
 // Slots -> ASCII stream
 lcd_formatter_8x1 #(
   .CLK_HZ(32768),
@@ -168,87 +107,100 @@ lcd #(
   .lcd_init_done(lcd_init_done)
 );
 
-// SPI controller for wind vane ADC
-// Generates 16 clock pulses with ~9ms periods, CS low during transfer
-// Repeats every ~2 seconds
+// Wind direction: SPI to vane ADC (AD7466) + nearest-neighbour decode + 3 LCD chars
+logic [7:0] wind_char0, wind_char1, wind_char2;
 
-localparam int SPI_WAIT_CYCLES = 65536;   // ~2s at 32768 Hz
-localparam int SPI_HALF_PERIOD = 148;     // ~4.5ms half period (9ms full period)
+wind_direction VANE(
+  .Clock,
+  .nReset,
+  .MISO,
+  .SPICLK,
+  .nVaneCS,
+  .char0 (wind_char0),
+  .char1 (wind_char1),
+  .char2 (wind_char2)
+);
 
-typedef enum logic [1:0] {
-  SPI_IDLE,
-  SPI_CLK_LOW,
-  SPI_CLK_HIGH,
-  SPI_DONE
-} spi_state_t;
-
-spi_state_t spi_state;
-logic [16:0] spi_wait_cnt;
-logic [7:0]  spi_period_cnt;
-logic [4:0]  spi_bit_cnt;
+//==========================================================
+// Mode: sync nMode, edge detect, mode_reg (default 2 = WindDirection)
+//==========================================================
+logic sync_nMode_1, sync_nMode_2;
+logic nMode_fall;
+logic [1:0] mode_reg;
 
 always_ff @(posedge Clock or negedge nReset) begin
   if (!nReset) begin
-    spi_state      <= SPI_IDLE;
-    spi_wait_cnt   <= '0;
-    spi_period_cnt <= '0;
-    spi_bit_cnt    <= '0;
-    SPICLK         <= 1'b1;
-    nVaneCS        <= 1'b1;
+    sync_nMode_1 <= 1'b1;
+    sync_nMode_2 <= 1'b1;
+    mode_reg     <= 2'd2;   // Default Mode 2 = WindDirection
   end else begin
-    case (spi_state)
-      SPI_IDLE: begin
-        SPICLK  <= 1'b1;
-        nVaneCS <= 1'b1;
-        if (spi_wait_cnt >= SPI_WAIT_CYCLES - 1) begin
-          spi_wait_cnt   <= '0;
-          spi_period_cnt <= '0;
-          spi_bit_cnt    <= '0;
-          nVaneCS        <= 1'b0;
-          spi_state      <= SPI_CLK_HIGH;
-        end else begin
-          spi_wait_cnt <= spi_wait_cnt + 1;
-        end
-      end
-
-      SPI_CLK_HIGH: begin
-        SPICLK <= 1'b1;
-        if (spi_period_cnt >= SPI_HALF_PERIOD - 1) begin
-          spi_period_cnt <= '0;
-          SPICLK         <= 1'b0;
-          spi_state      <= SPI_CLK_LOW;
-        end else begin
-          spi_period_cnt <= spi_period_cnt + 1;
-        end
-      end
-
-      SPI_CLK_LOW: begin
-        SPICLK <= 1'b0;
-        if (spi_period_cnt >= SPI_HALF_PERIOD - 1) begin
-          spi_period_cnt <= '0;
-          if (spi_bit_cnt >= 15) begin
-            spi_state <= SPI_DONE;
-          end else begin
-            spi_bit_cnt <= spi_bit_cnt + 1;
-            SPICLK      <= 1'b1;
-            spi_state   <= SPI_CLK_HIGH;
-          end
-        end else begin
-          spi_period_cnt <= spi_period_cnt + 1;
-        end
-      end
-
-      SPI_DONE: begin
-        if (spi_period_cnt >= SPI_HALF_PERIOD - 1) begin
-          nVaneCS        <= 1'b1;
-          spi_period_cnt <= '0;
-          spi_state      <= SPI_IDLE;
-        end else begin
-          spi_period_cnt <= spi_period_cnt + 1;
-        end
-      end
-    endcase
+    sync_nMode_1 <= nMode;
+    sync_nMode_2 <= sync_nMode_1;
+    if (nMode_fall)
+      mode_reg   <= (mode_reg + 2'd1);  // 0,1,2,3 wrap
   end
+end
+assign nMode_fall = sync_nMode_2 && !sync_nMode_1;
+
+//==========================================================
+// LCD slot mux: mode_reg==2 -> wind (3 chars + 5 spaces); else rain
+//==========================================================
+logic [1:0] rain_slot_type [LCD_COLS];
+logic [7:0] rain_slot_data [LCD_COLS];
+logic [1:0] wind_slot_type [LCD_COLS];
+logic [7:0] wind_slot_data [LCD_COLS];
+
+always_comb begin
+  for (int i = 0; i < LCD_COLS; i++) begin
+    wind_slot_type[i] = 2'b01;
+    wind_slot_data[i] = 8'h20;
+  end
+  // Right-align direction in last 3 slots (5,6,7): last position never empty
+  if (wind_char2 != 8'h20) begin
+    wind_slot_data[5] = wind_char0; wind_slot_data[6] = wind_char1; wind_slot_data[7] = wind_char2;  // 3 chars
+  end else if (wind_char1 != 8'h20) begin
+    wind_slot_data[5] = 8'h20;      wind_slot_data[6] = wind_char0; wind_slot_data[7] = wind_char1;  // 2 chars
+  end else begin
+    wind_slot_data[5] = 8'h20;      wind_slot_data[6] = 8'h20;      wind_slot_data[7] = wind_char0;  // 1 char
+  end
+end
+
+// Rain slots (existing logic, now as separate arrays)
+always_comb begin
+  for (int i = 0; i < LCD_COLS; i++) begin
+    rain_slot_type[i] = 2'b01;
+    rain_slot_data[i] = 8'h20;
+  end
+  if (rain_hundreds_bcd == 4'd0) begin
+    rain_slot_type[0] = 2'b01; rain_slot_data[0] = 8'h20;
+  end else begin
+    rain_slot_type[0] = 2'b00; rain_slot_data[0] = {4'b0000, rain_hundreds_bcd};
+  end
+  if (rain_hundreds_bcd == 4'd0 && rain_tens_bcd == 4'd0) begin
+    rain_slot_type[1] = 2'b01; rain_slot_data[1] = 8'h20;
+  end else begin
+    rain_slot_type[1] = 2'b00; rain_slot_data[1] = {4'b0000, rain_tens_bcd};
+  end
+  rain_slot_type[2] = 2'b00; rain_slot_data[2] = {4'b0000, rain_units_bcd};
+  rain_slot_type[3] = 2'b01; rain_slot_data[3] = 8'h2E;
+  rain_slot_type[4] = 2'b00; rain_slot_data[4] = {4'b0000, rain_tenths_bcd};
+  rain_slot_type[5] = 2'b01; rain_slot_data[5] = 8'h20;
+  rain_slot_type[6] = 2'b01; rain_slot_data[6] = "m";
+  rain_slot_type[7] = 2'b01; rain_slot_data[7] = "m";
+end
+
+// Select slots by mode
+always_comb begin
+  if (mode_reg == 2'd2)
+    for (int i = 0; i < LCD_COLS; i++) begin
+      lcd_slot_type[i] = wind_slot_type[i];
+      lcd_slot_data[i] = wind_slot_data[i];
+    end
+  else
+    for (int i = 0; i < LCD_COLS; i++) begin
+      lcd_slot_type[i] = rain_slot_type[i];
+      lcd_slot_data[i] = rain_slot_data[i];
+    end
 end
 
 // this module makes no attempt to communicate with the LCD
@@ -260,14 +212,8 @@ assign En  = lcd_en;
 assign DB_Out     = lcd_data;
 assign DB_nEnable = 1'b0; // Always drive data bus
 
-anemometer u_ane(
-  .clk(Clock),
-  .rst_n(nReset),
-  .anemo_sw(nWind),
-  .slot_type(),
-  .slot_data(),
-  .wind_tenths()
-);
+
 
 
 endmodule
+
