@@ -432,12 +432,17 @@ module pressure_temperature(
     end
   end
 
-  // Output register: nBaroCS one cycle behind internal to satisfy sensor hold time
+  // Output register: nBaroCS two cycles behind internal to satisfy sensor hold time
+  // (MS5803: CS must stay stable 25ns after posedge SCLK; avoid same-edge change)
+  logic nBaroCS_d1;
   always_ff @(posedge Clock or negedge nReset) begin
-    if (!nReset)
-      nBaroCS <= 1'b1;
-    else
-      nBaroCS <= nBaroCS_int;
+    if (!nReset) begin
+      nBaroCS_d1 <= 1'b1;
+      nBaroCS    <= 1'b1;
+    end else begin
+      nBaroCS_d1 <= nBaroCS_int;
+      nBaroCS    <= nBaroCS_d1;
+    end
   end
 
   //----------------------------------------------------------------------
@@ -457,11 +462,20 @@ module pressure_temperature(
       pressure_mbar <= 16'd1013;
       temp_c_x10    <= 16'sd250;  // 25.0°C
     end else if (state == S_UPDATE) begin
-      p_next = 16'd300 + (D1_raw[23:12] * 16'd800 / 16'd4096);
+      // system pressure_sensor model does not drive meaningful ADC data.
+      // Keep last valid value when SPI readback is X/Z to avoid '?' on LCD.
+      p_next = pressure_mbar;
+      if (!$isunknown(D1_raw)) begin
+        p_next = 16'd300 + (D1_raw[23:12] * 16'd800 / 16'd4096);
+      end
       if (p_next > 16'd1100) p_next = 16'd1100;
       if (p_next < 16'd300)  p_next = 16'd300;
       pressure_mbar <= p_next;
-      t_next = (($signed(D2_raw) - 24'sh400000) * 85 / 24'sh400000) + 16'sd250;
+
+      t_next = temp_c_x10;
+      if (!$isunknown(D2_raw)) begin
+        t_next = (($signed(D2_raw) - 24'sh400000) * 85 / 24'sh400000) + 16'sd250;
+      end
       if (t_next > 16'sd850) t_next = 16'sd850;
       if (t_next < -16'sd400) t_next = -16'sd400;
       temp_c_x10 <= t_next;
@@ -554,3 +568,4 @@ module pressure_temperature(
   end
 
 endmodule
+
