@@ -1,46 +1,46 @@
 module weather (
-  output SDO,
-  output RnW,
-  input nReset,
-  input [7:0] DB_In,
-  output MOSI,
+  input Clock,
+  input nRain,
+  input Demo,
+  input SDI,
+  input Test,
   input nWind,
-  input nMode,
+  input ScanEnable,
   output nVaneCS,
+  output SPICLK,
+  input [7:0] DB,
+  input nReset,
+  output RnW,
+  output SDO,
+  output nBaroCS,
+  input nStart,
+  output EN,
   output RS,
   input MISO,
-  input Test,
-  input nStart,
-  input SDI,
-  output EN,
-  output SPICLK,
-  input Demo,
-  input ScanEnable,
-  input nRain,
-  output nBaroCS,
-  input Clock
+  output MOSI,
+  input nMode
 );
 
-  wire CORE_SDO;
-  wire CORE_RnW;
-  wire CORE_nVaneCS;
-  wire CORE_RS;
-  wire CORE_MISO;
-  wire CORE_nReset;
-  wire [7:0] CORE_DB_In;
-  wire CORE_MOSI;
-  wire CORE_nWind;
-  wire CORE_nMode;
-  wire CORE_EN;
-  wire CORE_SPICLK;
-  wire CORE_Demo;
-  wire CORE_ScanEnable;
-  wire CORE_Test;
-  wire CORE_SDI;
-  wire CORE_nStart;
-  wire CORE_nBaroCS;
   wire CORE_nRain;
   wire CORE_Clock;
+  wire CORE_nWind;
+  wire CORE_Test;
+  wire CORE_Demo;
+  wire CORE_SDI;
+  wire [7:0] CORE_DB;
+  wire CORE_SPICLK;
+  wire CORE_nVaneCS;
+  wire CORE_ScanEnable;
+  wire CORE_nReset;
+  wire CORE_nStart;
+  wire CORE_nBaroCS;
+  wire CORE_SDO;
+  wire CORE_RnW;
+  wire CORE_MISO;
+  wire CORE_EN;
+  wire CORE_RS;
+  wire CORE_nMode;
+  wire CORE_MOSI;
 
   BU8P PAD_MOSI ( .PAD(MOSI), .A(CORE_MOSI) );
   BU8P PAD_nVaneCS ( .PAD(nVaneCS), .A(CORE_nVaneCS) );
@@ -57,40 +57,40 @@ module weather (
   ICP PAD_nReset ( .PAD(nReset), .Y(CORE_nReset) );
   ICP PAD_Test ( .PAD(Test), .Y(CORE_Test) );
   ICP PAD_ScanEnable ( .PAD(ScanEnable), .Y(CORE_ScanEnable) );
-  ICP PAD_DB_In_7 ( .PAD(DB_In[7]), .Y(CORE_DB_In[7]) );
-  ICP PAD_DB_In_6 ( .PAD(DB_In[6]), .Y(CORE_DB_In[6]) );
-  ICP PAD_DB_In_5 ( .PAD(DB_In[5]), .Y(CORE_DB_In[5]) );
-  ICP PAD_DB_In_4 ( .PAD(DB_In[4]), .Y(CORE_DB_In[4]) );
-  ICP PAD_DB_In_3 ( .PAD(DB_In[3]), .Y(CORE_DB_In[3]) );
-  ICP PAD_DB_In_2 ( .PAD(DB_In[2]), .Y(CORE_DB_In[2]) );
+  ICP PAD_DB_7 ( .PAD(DB[7]), .Y(CORE_DB[7]) );
+  ICP PAD_DB_6 ( .PAD(DB[6]), .Y(CORE_DB[6]) );
+  ICP PAD_DB_5 ( .PAD(DB[5]), .Y(CORE_DB[5]) );
+  ICP PAD_DB_4 ( .PAD(DB[4]), .Y(CORE_DB[4]) );
+  ICP PAD_DB_3 ( .PAD(DB[3]), .Y(CORE_DB[3]) );
+  ICP PAD_DB_2 ( .PAD(DB[2]), .Y(CORE_DB[2]) );
   ICP PAD_nWind ( .PAD(nWind), .Y(CORE_nWind) );
   BU8P PAD_RS ( .PAD(RS), .A(CORE_RS) );
   BU8P PAD_RnW ( .PAD(RnW), .A(CORE_RnW) );
   BU8P PAD_EN ( .PAD(EN), .A(CORE_EN) );
-  BU8P PAD_DB_In_0 ( .PAD(DB_In[0]), .A(CORE_DB_In[0]) );
-  BU8P PAD_DB_In_1 ( .PAD(DB_In[1]), .A(CORE_DB_In[1]) );
+  BU8P PAD_DB_0 ( .PAD(DB[0]), .A(CORE_DB[0]) );
+  BU8P PAD_DB_1 ( .PAD(DB[1]), .A(CORE_DB[1]) );
 
   weather_core core_inst (
-    .SDO(CORE_SDO),
-    .RnW(CORE_RnW),
-    .nVaneCS(CORE_nVaneCS),
-    .RS(CORE_RS),
-    .MISO(CORE_MISO),
-    .nReset(CORE_nReset),
-    .DB_In(CORE_DB_In),
-    .MOSI(CORE_MOSI),
+    .nRain(CORE_nRain),
+    .Clock(CORE_Clock),
     .nWind(CORE_nWind),
-    .nMode(CORE_nMode),
-    .EN(CORE_EN),
-    .SPICLK(CORE_SPICLK),
-    .Demo(CORE_Demo),
-    .ScanEnable(CORE_ScanEnable),
     .Test(CORE_Test),
+    .Demo(CORE_Demo),
     .SDI(CORE_SDI),
+    .DB(CORE_DB),
+    .SPICLK(CORE_SPICLK),
+    .nVaneCS(CORE_nVaneCS),
+    .ScanEnable(CORE_ScanEnable),
+    .nReset(CORE_nReset),
     .nStart(CORE_nStart),
     .nBaroCS(CORE_nBaroCS),
-    .nRain(CORE_nRain),
-    .Clock(CORE_Clock)
+    .SDO(CORE_SDO),
+    .RnW(CORE_RnW),
+    .MISO(CORE_MISO),
+    .EN(CORE_EN),
+    .RS(CORE_RS),
+    .nMode(CORE_nMode),
+    .MOSI(CORE_MOSI)
   );
 
 endmodule
