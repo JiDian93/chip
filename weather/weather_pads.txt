@@ -1,0 +1,54 @@
+#===================================================
+# weather_pads.txt
+#===================================================
+
+WRAPPER   weather
+CORE      weather_core
+INSTANCE  core_inst
+
+
+# ---------------- TOP ----------------
+
+TOP    OUTPUT      MOSI
+TOP    OUTPUT      nVaneCS
+TOP    INPUT       MISO
+TOP    OUTPUT      SPICLK
+TOP    PADS_VDD
+TOP    INPUT       nMode
+TOP    INPUT       nStart
+TOP    INPUT       nRain
+
+
+# ---------------- LEFT ----------------
+
+LEFT   OUTPUT      nBaroCS
+LEFT   INPUT       Demo
+LEFT   OUTPUT       SDO
+LEFT   INPUT       SDI
+LEFT   CORE_GND
+LEFT   INPUT_CLOCK Clock
+LEFT   INPUT       nReset
+LEFT   INPUT       Test
+LEFT   INPUT       ScanEnable
+
+
+# ---------------- BOTTOM ----------------
+
+BOTTOM INPUT       DB_In[7]
+BOTTOM INPUT       DB_In[6]
+BOTTOM INPUT       DB_In[5]
+BOTTOM PADS_GND
+BOTTOM INPUT       DB_In[4]
+BOTTOM INPUT       DB_In[3]
+BOTTOM INPUT       DB_In[2]
+
+
+# ---------------- RIGHT ----------------
+
+RIGHT  INPUT       nWind
+RIGHT  OUTPUT      RS
+RIGHT  OUTPUT      RnW
+RIGHT  CORE_VDD
+RIGHT  OUTPUT      EN
+RIGHT  OUTPUT      DB_In[0]
+RIGHT  OUTPUT      DB_In[1]
