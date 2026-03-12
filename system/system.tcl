@@ -5,8 +5,8 @@ simvision {
 
   # Open new waveform window
   
-    window new WaveWindow -name "Waves for Example Weather Station Design"
-    waveform using "Waves for Example Weather Station Design"
+    window new WaveWindow -name "Waves for Any Weather Station Design"
+    waveform using "Waves for Any Weather Station Design"
 
   # add Clock and nReset to wave window
   

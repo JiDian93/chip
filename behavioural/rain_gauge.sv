@@ -83,7 +83,7 @@ always_ff @( posedge Clock, negedge nReset )
     end
 
 // Convert pulse count to 4 BCD digits for ddd.d mm format
-// 1 pulse = 0.28mm = 28 × 0.01mm
+// 1 pulse = 0.28mm = 28 x 0.01mm
 // Round to 0.1mm: (pulses * 28 + 5) / 10
 // rain_1mm clamped to 0..999.9mm, i.e. 0..9999 (mm*10)
 always_comb
@@ -114,4 +114,3 @@ always_comb
   end
 
 endmodule
-

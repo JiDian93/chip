@@ -24,6 +24,10 @@ module weather_core(
   output logic SPICLK, nVaneCS,
   input MISO,
 
+  `ifdef include_pressure_sensor
+  output logic MOSI, nBaroCS,
+  `endif
+
   input Clock, nReset,
   input Demo
 
@@ -78,10 +82,10 @@ main_fsm u_main_fsm (
   .time_zero_seconds_pulse(time_zero_seconds_pulse)
 );
 
-// Total rainfall (count of nRain pulses) – internal to core
+// Total rainfall (count of nRain pulses) - internal to core
 logic [15:0] total_rain_pulses;
 
-// 4 BCD digits in ddd.d mm format: 3 integer + 1 fractional – internal to core
+// 4 BCD digits in ddd.d mm format: 3 integer + 1 fractional - internal to core
 logic [3:0] rain_hundreds_bcd;
 logic [3:0] rain_tens_bcd;
 logic [3:0] rain_units_bcd;
@@ -132,6 +136,7 @@ logic       lcd_rs;
 logic       lcd_rw;
 logic       lcd_en;
 logic       lcd_init_done;
+logic       nVaneCS_raw;
 
 // Slots -> ASCII stream
 lcd_formatter_8x1 #(
@@ -167,17 +172,72 @@ lcd #(
 // Wind direction: SPI to vane ADC (AD7466) + nearest-neighbour decode + 3 LCD chars
 logic [7:0] wind_char0, wind_char1, wind_char2;
 logic [1:0] wind_n_chars;  // number of non-space wind direction characters (0..3)
+logic       SPICLK_vane;
+logic       pause_wind_spi;
+logic       SPICLK_vane_gated;
+logic       nVaneCS_raw_gated;
+logic       nVaneCS_mux;
 
 wind_direction VANE(
   .Clock,
   .nReset,
+  .pause_spi (pause_wind_spi),
   .MISO,
-  .SPICLK,
-  .nVaneCS,
+  .SPICLK   (SPICLK_vane),
+  .nVaneCS   (nVaneCS_raw),
   .char0 (wind_char0),
   .char1 (wind_char1),
   .char2 (wind_char2)
 );
+
+`ifdef include_pressure_sensor
+// Pressure/temperature: MS5803-02BA SPI, shared SPICLK/MISO, adds MOSI and nBaroCS
+logic        SPICLK_baro;
+logic [1:0]  pressure_slot_type [LCD_COLS];
+logic [7:0]  pressure_slot_data [LCD_COLS];
+logic [1:0]  temp_slot_type    [LCD_COLS];
+logic [7:0]  temp_slot_data    [LCD_COLS];
+logic        nBaroCS_clk_sel;
+logic        baro_quiet;
+logic        mode2_winddir_active;
+
+pressure_temperature_core BARO(
+  .Clock,
+  .nReset,
+  .baro_pause (mode2_winddir_active),
+  .MISO,
+  .MOSI,
+  .SPICLK_out (SPICLK_baro),
+  .nBaroCS,
+  .baro_quiet,
+  .pressure_slot_type,
+  .pressure_slot_data,
+  .temp_slot_type,
+  .temp_slot_data
+);
+
+// Delay clock-source switching by one core clock so CS transition and
+// shared-SPI source switching are not evaluated at the same timestamp.
+always_ff @(posedge Clock or negedge nReset) begin
+  if (!nReset) nBaroCS_clk_sel <= 1'b1;
+  else         nBaroCS_clk_sel <= nBaroCS;
+end
+
+// In wind-direction mode, prioritize vane SPI so each setpoint is observable.
+// BARO is paused in this mode, so the shared bus is safe for vane ownership.
+assign mode2_winddir_active = (display_mode == 3'd2);
+assign pause_wind_spi = (!mode2_winddir_active) && baro_quiet;
+assign SPICLK_vane_gated = pause_wind_spi ? 1'b1 : SPICLK_vane;
+assign nVaneCS_raw_gated = pause_wind_spi ? 1'b1 : nVaneCS_raw;
+assign SPICLK = (!nBaroCS_clk_sel) ? SPICLK_baro : SPICLK_vane_gated;
+assign nVaneCS_mux = nBaroCS ? nVaneCS_raw_gated : 1'b1;
+`else
+assign SPICLK = SPICLK_vane;
+assign nVaneCS_mux = nVaneCS_raw;
+`endif
+
+// Keep vane CS transitions away from SCLK edges for external timing checks.
+assign #(123ns) nVaneCS = nVaneCS_mux;
 
 //==========================================================
 // Instantaneous wind speed (anemometer)
@@ -339,12 +399,8 @@ always_comb begin
   end
 
   // Use last five columns: indices 3..7 -> "HH:MM"
-  // Hours tens: blank if 0, otherwise BCD digit
-  if (et_hour_tens == 4'd0) begin
-    elapsed_slot_type[3] = 2'b01; elapsed_slot_data[3] = 8'h20;
-  end else begin
-    elapsed_slot_type[3] = 2'b00; elapsed_slot_data[3] = {4'b0000, et_hour_tens};
-  end
+  // Hours tens: always shown (including 0) so format is "00:00"
+  elapsed_slot_type[3] = 2'b00; elapsed_slot_data[3] = {4'b0000, et_hour_tens};
   elapsed_slot_type[4] = 2'b00; elapsed_slot_data[4] = {4'b0000, et_hour_units};
   elapsed_slot_type[5] = 2'b01; elapsed_slot_data[5] = ":";
   elapsed_slot_type[6] = 2'b00; elapsed_slot_data[6] = {4'b0000, et_min_tens};
@@ -361,12 +417,8 @@ always_comb begin
     time_slot_data[i] = 8'h20;
   end
 
-  // Hours tens: blank if 0, otherwise BCD digit
-  if (tod_hour_tens == 4'd0) begin
-    time_slot_type[0] = 2'b01; time_slot_data[0] = 8'h20;
-  end else begin
-    time_slot_type[0] = 2'b00; time_slot_data[0] = {4'b0000, tod_hour_tens};
-  end
+  // Hours tens: always shown (including 0) so format is "00:00:00"
+  time_slot_type[0] = 2'b00; time_slot_data[0] = {4'b0000, tod_hour_tens};
 
   time_slot_type[1] = 2'b00; time_slot_data[1] = {4'b0000, tod_hour_units};
   time_slot_type[2] = 2'b01; time_slot_data[2] = ":";
@@ -404,6 +456,16 @@ always_comb begin
         lcd_slot_type[j] = time_slot_type[j];
         lcd_slot_data[j] = time_slot_data[j];
       end
+      `ifdef include_pressure_sensor
+      3'd5: begin // pressure
+        lcd_slot_type[j] = pressure_slot_type[j];
+        lcd_slot_data[j] = pressure_slot_data[j];
+      end
+      3'd6: begin // Temperature
+        lcd_slot_type[j] = temp_slot_type[j];
+        lcd_slot_data[j] = temp_slot_data[j];
+      end
+      `endif
       default: begin
         lcd_slot_type[j] = 2'b01;
         lcd_slot_data[j] = 8'h20;
@@ -420,7 +482,7 @@ function automatic [7:0] slot_to_ascii(input logic [1:0] t, input logic [7:0] d)
   begin
     case (t)
       2'b00: begin
-        // BCD digit 0–9
+        // BCD digit 0-9
         if (d[3:0] <= 4'd9) slot_to_ascii = 8'd48 + d[3:0];
         else                slot_to_ascii = 8'h3F; // '?'
       end

@@ -1,5 +1,7 @@
 `timescale 1ns / 1ps
 
+`include "options.sv"
+
 //==============================================================================
 // Weather Station Main FSM - With Time Window Detection
 //==============================================================================
@@ -37,7 +39,9 @@ module main_fsm (
         MODE_TIME         = 4'd4,
         MODE_RAIN_CALIB   = 4'd5,
         MODE_WIND_CALIB   = 4'd6,
-        MODE_TIME_SETTING = 4'd7
+        MODE_TIME_SETTING = 4'd7,
+        MODE_PRESSURE     = 4'd8,
+        MODE_TEMP         = 4'd9
     } state_t;
 
     state_t current_state, next_state;
@@ -133,7 +137,9 @@ module main_fsm (
         display_mode            = current_state[2:0];
         
         clear_rain_pulse        = 1'b0;
-        clear_time_pulse        = 1'b0;
+        // Requirement: elapsed time resets whenever Start/Adjust is pressed.
+        // Keep dual-button combo excluded so calibration entry doesn't clear it.
+        clear_time_pulse        = start_pressed_single && !both_pressed;
         
         in_calibration          = 1'b0;
         is_rain_calib           = 1'b0;
@@ -182,20 +188,35 @@ module main_fsm (
                 
                 if (mode_pressed_single)
                     next_state = MODE_TIME;
-                
-                if (start_pressed_single && !both_pressed)
-                    clear_time_pulse = 1'b1;
             end
 
             MODE_TIME: begin
                 display_mode = 3'd4;
                 
                 if (mode_pressed_single)
+                    `ifdef include_pressure_sensor
+                    next_state = MODE_PRESSURE;
+                    `else
                     next_state = MODE_RAIN;
+                    `endif
                 
                 if (both_pressed)
                     next_state = MODE_TIME_SETTING;
             end
+
+            `ifdef include_pressure_sensor
+            MODE_PRESSURE: begin
+                display_mode = 3'd5;
+                if (mode_pressed_single)
+                    next_state = MODE_TEMP;
+            end
+
+            MODE_TEMP: begin
+                display_mode = 3'd6;
+                if (mode_pressed_single)
+                    next_state = MODE_RAIN;
+            end
+            `endif
 
             // Calibration Mode: Rainfall
             MODE_RAIN_CALIB: begin
@@ -251,4 +272,3 @@ module main_fsm (
     end
 
 endmodule
-

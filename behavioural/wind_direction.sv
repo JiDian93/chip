@@ -12,6 +12,7 @@ module wind_direction(
 
   input  logic Clock,
   input  logic nReset,
+  input  logic pause_spi,
 
   input  logic MISO,
 
@@ -28,9 +29,10 @@ timeunit 1ns;
 timeprecision 100ps;
 
 //----------------------------------------------------------------------
-// SPI controller: 16 SCLK pulses ~9ms period, CS low during transfer, repeat ~2s
+// SPI controller: 16 SCLK pulses ~9ms period, CS low during transfer.
+// Use a shorter inter-read gap so direction updates are visible quickly in tests.
 //----------------------------------------------------------------------
-localparam int SPI_WAIT_CYCLES = 65536;   // ~2s at 32768 Hz
+localparam int SPI_WAIT_CYCLES = 8192;    // ~250ms at 32768 Hz
 localparam int SPI_HALF_PERIOD = 148;      // ~4.5ms half period (9ms full period)
 
 typedef enum logic [1:0] {
@@ -51,14 +53,23 @@ logic [11:0] vane_adc_value;
 always_ff @(posedge Clock or negedge nReset) begin
   if (!nReset) begin
     spi_state      <= SPI_IDLE;
-    spi_wait_cnt   <= '0;
+    // Trigger first conversion quickly after reset deassertion.
+    spi_wait_cnt   <= SPI_WAIT_CYCLES - 1;
     spi_period_cnt <= '0;
     spi_bit_cnt    <= '0;
     SPICLK         <= 1'b1;
     nVaneCS        <= 1'b1;
     vane_adc_shift <= 12'b0;
-    vane_adc_value <= 12'd3143;  // N (0°) until first SPI read
+    vane_adc_value <= 12'd3143;  // N (0 deg) until first SPI read
   end else begin
+    if (pause_spi) begin
+      spi_state      <= SPI_IDLE;
+      spi_wait_cnt   <= '0;
+      spi_period_cnt <= '0;
+      spi_bit_cnt    <= '0;
+      SPICLK         <= 1'b1;
+      nVaneCS        <= 1'b1;
+    end else begin
     case (spi_state)
       SPI_IDLE: begin
         SPICLK  <= 1'b1;
@@ -116,6 +127,7 @@ always_ff @(posedge Clock or negedge nReset) begin
         end
       end
     endcase
+    end
   end
 end
 
@@ -123,9 +135,9 @@ end
 // ADC value -> direction index: nearest-neighbour (3.3V, 10k nominal)
 //----------------------------------------------------------------------
 localparam logic [11:0] NOMINAL_ADC [0:15] = '{
-  12'd3143, 12'd2458, 12'd2570, 12'd335,  12'd372,  12'd264,   // N, NNE, NE, ENE, E, ESE
-  12'd744,  12'd893,  12'd1154, 12'd1067, 12'd1476, 12'd2556,  // SE, SSE, S, SSW, SW, WSW
-  12'd3782, 12'd3425, 12'd2842, 12'd2655                        // W, WNW, NW, NNW
+  12'd3143, 12'd1624, 12'd1845, 12'd335,  12'd372,  12'd264,   // N, NNE, NE, ENE, E, ESE
+  12'd739,  12'd506,  12'd1149, 12'd979,  12'd2521, 12'd2398,  // SE, SSE, S, SSW, SW, WSW
+  12'd3781, 12'd3310, 12'd3549, 12'd2811                        // W, WNW, NW, NNW
 };
 
 logic [3:0] dir_index;

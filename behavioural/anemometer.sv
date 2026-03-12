@@ -1,5 +1,5 @@
 
-​//==============================================================
+//==============================================================
 // anemometer.sv
 //  - Cup anemometer switch -> instantaneous wind speed (m/s)
 //  - 1.492 mph produces 1 closure per second (1 Hz)
@@ -14,7 +14,9 @@ module anemometer #(
     parameter int unsigned COLS       = 8,
 
     // If no pulse for TIMEOUT_S seconds -> show 0.0
-    parameter int unsigned TIMEOUT_S  = 2
+    parameter int unsigned TIMEOUT_S  = 2,
+    // Monostable debounce window after each accepted edge
+    parameter int unsigned DEBOUNCE_MS = 5
 )(
     input  logic clk,
     input  logic rst_n,
@@ -44,8 +46,30 @@ module anemometer #(
         end
     end
 
-    // rising edge counts one closure event
-    wire sw_rise = sw_ff1 & ~sw_ff2;
+    // rising edge candidate
+    wire sw_rise_raw = sw_ff1 & ~sw_ff2;
+
+    // ----------------------------------------------------------
+    // 1b) Monostable debounce (rain_gauge style)
+    // ----------------------------------------------------------
+    localparam int unsigned DEBOUNCE_CYC = (CLK_HZ * DEBOUNCE_MS) / 1000;
+    logic [31:0] debounce_counter;
+    logic        sw_rise;
+
+    always_ff @(posedge clk or negedge rst_n) begin
+        if(!rst_n) begin
+            debounce_counter <= 32'd0;
+            sw_rise          <= 1'b0;
+        end else begin
+            sw_rise <= 1'b0;
+            if (debounce_counter != 32'd0)
+                debounce_counter <= debounce_counter - 1'b1;
+            else if (sw_rise_raw) begin
+                sw_rise <= 1'b1;
+                debounce_counter <= (DEBOUNCE_CYC == 0) ? 32'd1 : DEBOUNCE_CYC;
+            end
+        end
+    end
 
     // ----------------------------------------------------------
     // 2) Measure period between pulses (in clk cycles)
@@ -78,11 +102,11 @@ module anemometer #(
     //
     // Given: 1 Hz => 1.492 mph
     // mph -> m/s: 1 mph = 0.44704 m/s
-    // => 1 Hz => 1.492*0.44704 ≈ 0.666... m/s
+    // => 1 Hz => 1.492*0.44704 ~= 0.666... m/s
     //
-    // tenths(m/s) = (m/s)*10 ≈ 6.67 * Hz
+    // tenths(m/s) = (m/s)*10 ~= 6.67 * Hz
     // Hz = CLK_HZ / period_cycles
-    // wind_tenths ≈ (667*CLK_HZ) / (100*period)
+    // wind_tenths ~= (667*CLK_HZ) / (100*period)
     // (with rounding, clamp to 99.9 => 999 tenths)
     // ----------------------------------------------------------
     always_ff @(posedge clk or negedge rst_n) begin

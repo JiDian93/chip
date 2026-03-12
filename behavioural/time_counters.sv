@@ -81,4 +81,3 @@ module time_counters (
     end
 
 endmodule
-

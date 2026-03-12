@@ -2,14 +2,14 @@
 //
 // options.sv - 2025/2026
 //
-//    This options file sets a number of compile time options
-//    which are necessary for successful simulation
+//    This is a blank options file in which various compile time
+//    options may be set
 //
 ///////////////////////////////////////////////////////////////////////
 
 // The following line specifies the clock period
 //
-`define clock_period 30517.6ns
+//`define clock_period 30517.6ns
 //
 // The default frequency of 32.768kHz is based on a freely available clock chip
 // If you choose to vary this frequency you should base your new frequency
@@ -25,7 +25,7 @@
 //  signals
 //   (Test, SDI, SDO)
 //
-`define no_scan_signals
+//`define no_scan_signals
 
 // The following line indicates that the model supports separate scan control
 //  signals
@@ -80,18 +80,16 @@
 // Uncomment the following line to indicate that your weather station
 //  supports a pressure and temperature sensor
 //
-`define include_pressure_sensor
+//`define include_pressure_sensor
 
 // The following line specifies the number of operating modes
 //
-`define num_modes 7
+//`define num_modes 5
 
 // The following lines specify the sequence of operating modes after reset
 //
-`define Mode0 TotalRainfall
-`define Mode1 InstantaneousWindSpeed
-`define Mode2 WindDirection
-`define Mode3 ElapsedTime
-`define Mode4 TimeOfDay
-`define Mode5 Pressure
-`define Mode6 Temperature
+//`define Mode0 TotalRainfall
+//`define Mode1 InstantaneousWindSpeed
+//`define Mode2 WindDirection
+//`define Mode3 ElapsedTime
+//`define Mode4 TimeOfDay

@@ -29,7 +29,7 @@ module elapsed_time_counter (
                             if (hour_units == 4'd9) begin
                                 hour_units <= 4'd0;
                                 if (hour_tens == 4'd9)
-                                    hour_tens <= 4'd9;
+                                    hour_tens <= 4'd0;
                                 else
                                     hour_tens <= hour_tens + 1'b1;
                             end else begin
@@ -51,4 +51,3 @@ module elapsed_time_counter (
     end
 
 endmodule
-

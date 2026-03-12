@@ -141,4 +141,3 @@ module dual_button_detector #(
     end
 
 endmodule
-
