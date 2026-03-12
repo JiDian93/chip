@@ -34,13 +34,13 @@ LEFT   INPUT       ScanEnable
 
 # ---------------- BOTTOM ----------------
 
-BOTTOM INPUT       DB_In[7]
-BOTTOM INPUT       DB_In[6]
-BOTTOM INPUT       DB_In[5]
+BOTTOM INPUT       DB[7]
+BOTTOM INPUT       DB[6]
+BOTTOM INPUT       DB[5]
 BOTTOM PADS_GND
-BOTTOM INPUT       DB_In[4]
-BOTTOM INPUT       DB_In[3]
-BOTTOM INPUT       DB_In[2]
+BOTTOM INPUT       DB[4]
+BOTTOM INPUT       DB[3]
+BOTTOM INPUT       DB[2]
 
 
 # ---------------- RIGHT ----------------
@@ -50,5 +50,6 @@ RIGHT  OUTPUT      RS
 RIGHT  OUTPUT      RnW
 RIGHT  CORE_VDD
 RIGHT  OUTPUT      EN
-RIGHT  OUTPUT      DB_In[0]
-RIGHT  OUTPUT      DB_In[1]
+RIGHT  OUTPUT      DB[0]
+RIGHT  OUTPUT      DB[1]
+
