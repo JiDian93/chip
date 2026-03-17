@@ -1,0 +1,58 @@
+`timescale 1ns / 1ps
+`include "options.sv"
+
+module clock_divider (
+    input  logic Clock,     // System clock (derived from `clock_period)
+    input  logic nReset,    // Active-low asynchronous reset
+    input  logic Demo,      // Simulation speedup
+
+    output logic tick_1kHz, // ~1kHz
+    output logic tick_1Hz   // 1Hz (64Hz in Demo mode)
+);
+
+    // Clock frequency in Hz (for `clock_period = 30517.6ns this is 32.768kHz).
+    // If you change `clock_period` in options.sv, update this value accordingly.
+    localparam int unsigned CLK_HZ = 32768;
+    localparam int unsigned DIV_1KHZ = (CLK_HZ >= 1000) ? ((CLK_HZ + 500) / 1000) : 1;
+    localparam int unsigned DIV_1HZ = (CLK_HZ > 0) ? CLK_HZ : 1;
+    localparam int unsigned DIV_DEMO = (CLK_HZ >= 64) ? (CLK_HZ / 64) : 1;
+
+    logic [31:0] cnt_1khz;
+    logic [31:0] cnt_1hz;
+
+    always_ff @(posedge Clock or negedge nReset) begin
+        if (!nReset) begin
+            cnt_1khz  <= 32'd0;
+            cnt_1hz   <= 32'd0;
+            tick_1kHz <= 1'b0;
+            tick_1Hz  <= 1'b0;
+        end else begin
+            if (cnt_1khz >= DIV_1KHZ - 1) begin
+                cnt_1khz  <= 32'd0;
+                tick_1kHz <= 1'b1;
+            end else begin
+                cnt_1khz  <= cnt_1khz + 1'b1;
+                tick_1kHz <= 1'b0;
+            end
+
+            if (Demo) begin
+                if (cnt_1hz >= DIV_DEMO - 1) begin
+                    cnt_1hz  <= 32'd0;
+                    tick_1Hz <= 1'b1;
+                end else begin
+                    cnt_1hz  <= cnt_1hz + 1'b1;
+                    tick_1Hz <= 1'b0;
+                end
+            end else begin
+                if (cnt_1hz >= DIV_1HZ - 1) begin
+                    cnt_1hz  <= 32'd0;
+                    tick_1Hz <= 1'b1;
+                end else begin
+                    cnt_1hz  <= cnt_1hz + 1'b1;
+                    tick_1Hz <= 1'b0;
+                end
+            end
+        end
+    end
+
+endmodule
