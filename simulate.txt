@@ -10,7 +10,7 @@ assign DB_In = DB;
 
 
 
-./simulate -no_graphics -gate -sdf gate_level/weather.sdf gate_level 400s   +define+stimulus=system2/storm1.sv +notimingchecks -exit
+./simulate -no_graphics -gate -sdf gate_level/weather.sdf gate_level 400s   +define+stimulus=system2/storm2.sv +notimingchecks -exit
 
 
 
