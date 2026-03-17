@@ -29,3 +29,18 @@ analyze -format sv "../behavioural/anemometer.sv \
 ../behavioural/pressure_temperature_core.sv \
 ../behavioural/weather.sv"
 
+create_clock -period 30517.6 -name master_clock [get_ports Clock]
+
+set_clock_latency     2.5 [get_clocks master_clock]
+set_clock_transition  0.5 [get_clocks master_clock]
+set_clock_uncertainty 1.0 [get_clocks master_clock]
+
+set_input_delay  12.0 -max -network_latency_included -clock master_clock \
+    [remove_from_collection [all_inputs] [get_ports Clock]]
+set_input_delay  0.5 -min -network_latency_included -clock master_clock \
+    [remove_from_collection [all_inputs] [get_ports Clock]]
+
+set_output_delay 8.0 -max -network_latency_included -clock master_clock \
+    [all_outputs]
+set_output_delay 0.5 -min -network_latency_included -clock master_clock \
+    [all_outputs]
