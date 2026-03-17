@@ -17,11 +17,6 @@ module weather (
   input nMode
 );
 
-wire [7:0] DB_In, DB_Out;
-wire DB_nEnable;
-assign DB = ( ! DB_nEnable ) ? DB_Out : 'z;
-assign DB_In = DB;
-
   wire CORE_nRain;
   wire CORE_Clock;
   wire CORE_nWind;
