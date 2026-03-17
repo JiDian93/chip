@@ -35,11 +35,12 @@ timeprecision 100ps;
 localparam int SPI_WAIT_CYCLES = 8192;    // ~250ms at 32768 Hz
 localparam int SPI_HALF_PERIOD = 148;      // ~4.5ms half period (9ms full period)
 
-typedef enum logic [1:0] {
+typedef enum logic [2:0] {
   SPI_IDLE,
   SPI_CLK_LOW,
   SPI_CLK_HIGH,
-  SPI_DONE
+  SPI_DONE,
+  SPI_RELEASE_CS
 } spi_state_t;
 
 spi_state_t spi_state;
@@ -116,15 +117,21 @@ always_ff @(posedge Clock or negedge nReset) begin
       end
 
       SPI_DONE: begin
+        SPICLK <= 1'b1;
         if (spi_period_cnt == 0)
           vane_adc_value <= vane_adc_shift;
         if (spi_period_cnt >= SPI_HALF_PERIOD - 1) begin
-          nVaneCS        <= 1'b1;
           spi_period_cnt <= '0;
-          spi_state      <= SPI_IDLE;
+          spi_state      <= SPI_RELEASE_CS;
         end else begin
           spi_period_cnt <= spi_period_cnt + 1;
         end
+      end
+
+      SPI_RELEASE_CS: begin
+        SPICLK   <= 1'b1;
+        nVaneCS  <= 1'b1;
+        spi_state <= SPI_IDLE;
       end
     endcase
     end
@@ -181,5 +188,7 @@ always_comb begin
     default: begin char0 = "?"; char1 = " "; char2 = " "; end
   endcase
 end
+
+endmodule
 
 endmodule
