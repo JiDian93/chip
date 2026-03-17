@@ -11,3 +11,21 @@ assign DB_In = DB;
 
 
 ./simulate -no_graphics -gate -sdf gate_level/weather.sdf gate_level 400s   +define+stimulus=system2/storm1.sv +notimingchecks -exit
+
+
+
+analyze -format sv "../behavioural/anemometer.sv \
+../behavioural/clock_divider.sv \
+../behavioural/dual_button_detector.sv \
+../behavioural/elapsed_time_counter.sv \
+../behavioural/lcd.sv \
+../behavioural/lcd_formatter_8x1.sv \
+../behavioural/main_fsm.sv \
+../behavioural/options.sv \
+../behavioural/rain_gauge.sv \
+../behavioural/time_counters.sv \
+../behavioural/weather_core.sv \
+../behavioural/wind_direction.sv \
+../behavioural/pressure_temperature_core.sv \
+../behavioural/weather.sv"
+
