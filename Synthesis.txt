@@ -62,6 +62,10 @@ insert_dft
 
 dft_drc
 
+report_names -rules verilog
+
+change_names -rules verilog -hierarchy -verbose
+
 
 write -f verilog -hierarchy -output "../gate_level/weather.v"
 write_sdc ../constraints/weather.sdc
