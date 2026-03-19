@@ -218,7 +218,7 @@ module main_fsm (
             end
             `endif
 
-            // Calibration Mode: Rainfall (sub-state order: Digit 3 → 2 → 1 → 0 per spec)
+            // Calibration Mode: Rainfall (sub-state order: Digit 3 -> 2 -> 1 -> 0 per spec)
             MODE_RAIN_CALIB: begin
                 in_calibration    = 1'b1;
                 is_rain_calib     = 1'b1;
@@ -232,7 +232,7 @@ module main_fsm (
                     next_state = MODE_RAIN;
             end
 
-            // Calibration Mode: Wind Speed (sub-state order: Digit 3 → 2 → 1 → 0 per spec)
+            // Calibration Mode: Wind Speed (sub-state order: Digit 3 -> 2 -> 1 -> 0 per spec)
             MODE_WIND_CALIB: begin
                 in_calibration    = 1'b1;
                 is_rain_calib     = 1'b0;
