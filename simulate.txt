@@ -16,7 +16,7 @@ assign DB_In = DB;
 ./simulate  -gate  -sdf gate_level/weather.sdf  behavioural  10s
 
 ./simulate -no_graphics -tech c35b4 -gate behavioural 20s +define+basic_mode_change
-Setting simulation time
+Setting simulation time -exit
 
 
 
