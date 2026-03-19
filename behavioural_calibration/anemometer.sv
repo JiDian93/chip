@@ -132,7 +132,8 @@ module anemometer #(
         end
     end
 
-    // Calibration: multiplier 1000 = 1.0x, range 100..9999 (0.1x to 9.999x); thousands overflow -> 100
+    // Calibration: multiplier 1000 = 1.0x, range 100..9999 (0.1x to 9.999x)
+    // Edit is per-digit (9 -> 0) without carry into neighbouring digits; no lower-bound clamp.
     logic [15:0] wind_calib_mult;
     logic        wind_calib_active;
     assign wind_calib_active = in_calibration && !is_rain_calib;
@@ -140,15 +141,20 @@ module anemometer #(
         if(!rst_n) begin
             wind_calib_mult <= 16'd1000;
         end else if(wind_calib_active && calib_increment_pulse) begin
-            logic [15:0] add, next_val;
-            add = (calib_digit_index == 2'd0) ? 16'd1   :
-                  (calib_digit_index == 2'd1) ? 16'd10  :
-                  (calib_digit_index == 2'd2) ? 16'd100 : 16'd1000;
-            next_val = wind_calib_mult + add;
-            if (next_val > 16'd9999)
-                wind_calib_mult <= (calib_digit_index == 2'd3) ? 16'd100 : 16'd1000;
-            else
-                wind_calib_mult <= next_val[15:0];
+            logic [3:0] d3, d2, d1, d0;
+            logic [15:0] next_val;
+            d3 = 4'(wind_calib_mult / 1000);
+            d2 = 4'((wind_calib_mult / 100) % 10);
+            d1 = 4'((wind_calib_mult / 10) % 10);
+            d0 = 4'(wind_calib_mult % 10);
+            unique case (calib_digit_index)
+                2'd0: d0 = (d0 == 4'd9) ? 4'd0 : (d0 + 4'd1);
+                2'd1: d1 = (d1 == 4'd9) ? 4'd0 : (d1 + 4'd1);
+                2'd2: d2 = (d2 == 4'd9) ? 4'd0 : (d2 + 4'd1);
+                default: d3 = (d3 == 4'd9) ? 4'd0 : (d3 + 4'd1);
+            endcase
+            next_val = d3 * 16'd1000 + d2 * 16'd100 + d1 * 16'd10 + d0;
+            wind_calib_mult <= next_val;
         end
     end
 
