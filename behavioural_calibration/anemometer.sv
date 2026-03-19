@@ -1,4 +1,3 @@
-
 //==============================================================
 // anemometer.sv
 //  - Cup anemometer switch -> instantaneous wind speed (m/s)
@@ -16,7 +15,7 @@ module anemometer #(
     // If no pulse for TIMEOUT_S seconds -> show 0.0
     parameter int unsigned TIMEOUT_S  = 2,
     // Monostable debounce window after each accepted edge
-    parameter int unsigned DEBOUNCE_MS = 5
+    parameter int unsigned DEBOUNCE_MS = 25
 )(
     input  logic clk,
     input  logic rst_n,
@@ -52,26 +51,26 @@ module anemometer #(
         end
     end
 
-    // rising edge candidate
-    wire sw_rise_raw = sw_ff1 & ~sw_ff2;
+    // nWind/anemo switch is active-low: count falling edges (high -> low)
+    wire sw_fall_raw = ~sw_ff1 & sw_ff2;
 
     // ----------------------------------------------------------
     // 1b) Monostable debounce (rain_gauge style)
     // ----------------------------------------------------------
     localparam int unsigned DEBOUNCE_CYC = (CLK_HZ * DEBOUNCE_MS) / 1000;
     logic [31:0] debounce_counter;
-    logic        sw_rise;
+    logic        sw_fall;
 
     always_ff @(posedge clk or negedge rst_n) begin
         if(!rst_n) begin
             debounce_counter <= 32'd0;
-            sw_rise          <= 1'b0;
+            sw_fall          <= 1'b0;
         end else begin
-            sw_rise <= 1'b0;
+            sw_fall <= 1'b0;
             if (debounce_counter != 32'd0)
                 debounce_counter <= debounce_counter - 1'b1;
-            else if (sw_rise_raw) begin
-                sw_rise <= 1'b1;
+            else if (sw_fall_raw) begin
+                sw_fall <= 1'b1;
                 debounce_counter <= (DEBOUNCE_CYC == 0) ? 32'd1 : DEBOUNCE_CYC;
             end
         end
@@ -95,7 +94,7 @@ module anemometer #(
             if(cyc_since_last != 32'hFFFF_FFFF)
                 cyc_since_last <= cyc_since_last + 1;
 
-            if(sw_rise) begin
+            if(sw_fall) begin
                 last_period_cyc <= (cyc_since_last == 0) ? 32'd1 : cyc_since_last;
                 cyc_since_last  <= 32'd0;
                 have_period     <= 1'b1;
