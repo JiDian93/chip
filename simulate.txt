@@ -54,5 +54,6 @@ set_output_delay 8.0 -max -network_latency_included -clock master_clock \
 set_output_delay 0.5 -min -network_latency_included -clock master_clock \
     [all_outputs]
 
+cd synthesis
 dc_shell
 source scrip_synthesis_sync_scan.tcl
