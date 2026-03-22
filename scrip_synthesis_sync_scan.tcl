@@ -48,7 +48,8 @@ run_step "constraints" {
 
 run_step "remove_attribute" {remove_attribute [get_cells RESET_SYNC_FF*] dont_touch}
 
-run_step "compile_scan" {compile -scan}
+# Mapped netlist required before insert_dft (do NOT compile -scan here).
+run_step "compile_initial" {compile}
 
 run_step "set_dft_signal_existing" {
   set_dft_signal -view existing_dft -type ScanClock   -port Clock  -timing {45 60}
@@ -80,7 +81,39 @@ run_step "preview_dft" {preview_dft}
 
 run_step "insert_dft" {insert_dft}
 
+run_step "compile_scan_incremental" {compile -scan -incremental}
+
 run_step "dft_drc" {dft_drc}
+
+# A lone "1" in report_scan_chain is often "chain 1" or "1 chain" (see chain_count 1),
+# not "only one flip-flop in the chain". Real depth is the Length / scan-elements column.
+# Scan reports: do not use report_scan_chain -nosplit on older DC (CMD-012: unknown option).
+# sh_enable_page_mode false at top avoids "--More--" paging on plain report_scan_chain.
+run_step "report_scan_chains" {
+  redirect -file ../gate_level/scan_chain_length.rpt {
+    echo "=== current_design ==="
+    if {[catch {echo [get_object_name [current_design]]} _]} {
+      echo "(current_design query skipped)"
+    }
+    echo ""
+    echo "=== report_scan_chain (Length column = flip-flops in each chain) ==="
+    if {[catch {report_scan_chain} err]} {
+      echo "report_scan_chain failed: $err"
+    }
+    echo ""
+    echo "=== report_dft_signal ==="
+    if {[catch {report_dft_signal} err2]} {
+      echo "report_dft_signal failed: $err2"
+    }
+    echo ""
+    echo "=== report_scan_path (optional) ==="
+    if {[catch {report_scan_path -view existing_dft -chain 1} err3]} {
+      if {[catch {report_scan_path -chain 1} err4]} {
+        echo "report_scan_path failed: $err3 / $err4"
+      }
+    }
+  }
+}
 
 run_step "report_names" {report_names -rules verilog}
 
