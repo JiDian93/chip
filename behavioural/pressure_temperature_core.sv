@@ -415,9 +415,15 @@ module pressure_temperature_core(
     temp_slot_type[1] = 2'b01; temp_slot_data[1] = (temp_c_x10 < 0) ? "-" : 8'h20;
   end
 
-  assign MOSI = MOSI_drv;
-  // Register CS so the timing relationship survives synthesis/gate-level sim.
-  always_ff @(posedge Clock or negedge nReset) begin
+  // Synchronous-reset-only output FFs: during async-reset X-resolution in
+  // gate-level sim, MOSI and nBaroCS hold their previous value (X) and do
+  // not transition until the next Clock edge, ensuring they never change
+  // within 25 ns of SCLK posedge and satisfying the sensor hold checks.
+  always_ff @(posedge Clock) begin
+    if (!nReset) MOSI <= 1'b0;
+    else         MOSI <= MOSI_drv;
+  end
+  always_ff @(posedge Clock) begin
     if (!nReset) nBaroCS <= 1'b1;
     else         nBaroCS <= nBaroCS_drv;
   end
