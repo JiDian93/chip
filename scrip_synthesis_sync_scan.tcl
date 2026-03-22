@@ -90,7 +90,7 @@ run_step "dft_drc" {dft_drc}
 # Scan reports: do not use report_scan_chain -nosplit on older DC (CMD-012: unknown option).
 # sh_enable_page_mode false at top avoids "--More--" paging on plain report_scan_chain.
 run_step "report_scan_chains" {
-  redirect -file ../gate_level/scan_chain_length.rpt {
+  redirect -file ../synthesis/scan_chain_length.rpt {
     echo "=== current_design ==="
     if {[catch {echo [get_object_name [current_design]]} _]} {
       echo "(current_design query skipped)"
