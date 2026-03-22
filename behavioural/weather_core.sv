@@ -90,6 +90,10 @@ logic [3:0] rain_hundreds_bcd;
 logic [3:0] rain_tens_bcd;
 logic [3:0] rain_units_bcd;
 logic [3:0] rain_tenths_bcd;
+logic [3:0] rain_calib_thousands_bcd;
+logic [3:0] rain_calib_hundreds_bcd;
+logic [3:0] rain_calib_tens_bcd;
+logic [3:0] rain_calib_units_bcd;
 
 // Rain submodule: total rainfall and ddd.d mm BCD digits
 rain_gauge RAIN(
@@ -101,7 +105,15 @@ rain_gauge RAIN(
   .rain_hundreds_bcd,
   .rain_tens_bcd,
   .rain_units_bcd,
-  .rain_tenths_bcd
+  .rain_tenths_bcd,
+  .rain_calib_thousands_bcd,
+  .rain_calib_hundreds_bcd,
+  .rain_calib_tens_bcd,
+  .rain_calib_units_bcd,
+  .in_calibration       (in_calibration),
+  .is_rain_calib        (is_rain_calib),
+  .calib_digit_index    (calib_digit_index),
+  .calib_increment_pulse(calib_increment_pulse)
 );
 
 //==========================================================
@@ -236,8 +248,11 @@ assign SPICLK = SPICLK_vane;
 assign nVaneCS_mux = nVaneCS_raw;
 `endif
 
-// Keep vane CS transitions away from SCLK edges for external timing checks.
-assign #(123ns) nVaneCS = nVaneCS_mux;
+// Register CS so the timing relationship survives synthesis/gate-level sim.
+always_ff @(posedge Clock or negedge nReset) begin
+  if (!nReset) nVaneCS <= 1'b1;
+  else         nVaneCS <= nVaneCS_mux;
+end
 
 //==========================================================
 // Instantaneous wind speed (anemometer)
@@ -249,12 +264,16 @@ anemometer #(
   .CLK_HZ(32768),
   .COLS  (LCD_COLS)
 ) U_ANEMO (
-  .clk       (Clock),
-  .rst_n     (nReset),
-  .anemo_sw  (nWind),
-  .slot_type (windspd_slot_type),
-  .slot_data (windspd_slot_data),
-  .wind_tenths(wind_tenths)
+  .clk                  (Clock),
+  .rst_n                (nReset),
+  .anemo_sw             (nWind),
+  .slot_type            (windspd_slot_type),
+  .slot_data            (windspd_slot_data),
+  .wind_tenths          (wind_tenths),
+  .in_calibration       (in_calibration),
+  .is_rain_calib        (is_rain_calib),
+  .calib_digit_index    (calib_digit_index),
+  .calib_increment_pulse(calib_increment_pulse)
 );
 
 //==========================================================
@@ -263,6 +282,7 @@ anemometer #(
 
 logic [3:0] et_hour_tens, et_hour_units;
 logic [3:0] et_min_tens,  et_min_units;
+logic [3:0] et_sec_tens, et_sec_units;
 
 elapsed_time_counter U_ELAPSED (
   .Clock          (Clock),
@@ -272,18 +292,22 @@ elapsed_time_counter U_ELAPSED (
   .hour_tens      (et_hour_tens),
   .hour_units     (et_hour_units),
   .min_tens       (et_min_tens),
-  .min_units      (et_min_units)
+  .min_units      (et_min_units),
+  .sec_tens       (et_sec_tens),
+  .sec_units      (et_sec_units)
 );
 
 logic [3:0] tod_hour_tens, tod_hour_units;
 logic [3:0] tod_min_tens,  tod_min_units;
 logic [3:0] tod_sec_tens,  tod_sec_units;
+logic [3:0] tod_sixtieths_tens, tod_sixtieths_units;
 
 time_counters U_TIME (
   .Clock                (Clock),
   .nReset               (nReset),
   .tick_1Hz             (tick_1Hz),
   .nClear_time          (1'b1),
+  .Demo                 (Demo),
   .time_set_field       (time_set_field),
   .time_increment_pulse (time_increment_pulse),
   .time_zero_seconds_pulse(time_zero_seconds_pulse),
@@ -292,11 +316,13 @@ time_counters U_TIME (
   .min_tens             (tod_min_tens),
   .min_units            (tod_min_units),
   .sec_tens             (tod_sec_tens),
-  .sec_units            (tod_sec_units)
+  .sec_units            (tod_sec_units),
+  .sixtieths_tens       (tod_sixtieths_tens),
+  .sixtieths_units      (tod_sixtieths_units)
 );
 
 //==========================================================
-// Rain slots (ddd.d mm)
+// Rain slots: normal (ddd.d mm) or calib mode ( ddd.d  = multiplier e.g.  1.035 )
 //==========================================================
 
 always_comb begin
@@ -304,22 +330,34 @@ always_comb begin
     rain_slot_type[i] = 2'b01;
     rain_slot_data[i] = 8'h20;
   end
-  if (rain_hundreds_bcd == 4'd0) begin
+  if (in_calibration && is_rain_calib) begin
+    // Show calibration multiplier as " ddd.d " (e.g. " 1.035 ")
     rain_slot_type[0] = 2'b01; rain_slot_data[0] = 8'h20;
+    rain_slot_type[1] = 2'b00; rain_slot_data[1] = {4'b0000, rain_calib_thousands_bcd};
+    rain_slot_type[2] = 2'b01; rain_slot_data[2] = 8'h2E;
+    rain_slot_type[3] = 2'b00; rain_slot_data[3] = {4'b0000, rain_calib_hundreds_bcd};
+    rain_slot_type[4] = 2'b00; rain_slot_data[4] = {4'b0000, rain_calib_tens_bcd};
+    rain_slot_type[5] = 2'b00; rain_slot_data[5] = {4'b0000, rain_calib_units_bcd};
+    rain_slot_type[6] = 2'b01; rain_slot_data[6] = 8'h20;
+    rain_slot_type[7] = 2'b01; rain_slot_data[7] = 8'h20;
   end else begin
-    rain_slot_type[0] = 2'b00; rain_slot_data[0] = {4'b0000, rain_hundreds_bcd};
+    if (rain_hundreds_bcd == 4'd0) begin
+      rain_slot_type[0] = 2'b01; rain_slot_data[0] = 8'h20;
+    end else begin
+      rain_slot_type[0] = 2'b00; rain_slot_data[0] = {4'b0000, rain_hundreds_bcd};
+    end
+    if (rain_hundreds_bcd == 4'd0 && rain_tens_bcd == 4'd0) begin
+      rain_slot_type[1] = 2'b01; rain_slot_data[1] = 8'h20;
+    end else begin
+      rain_slot_type[1] = 2'b00; rain_slot_data[1] = {4'b0000, rain_tens_bcd};
+    end
+    rain_slot_type[2] = 2'b00; rain_slot_data[2] = {4'b0000, rain_units_bcd};
+    rain_slot_type[3] = 2'b01; rain_slot_data[3] = 8'h2E;
+    rain_slot_type[4] = 2'b00; rain_slot_data[4] = {4'b0000, rain_tenths_bcd};
+    rain_slot_type[5] = 2'b01; rain_slot_data[5] = 8'h20;
+    rain_slot_type[6] = 2'b01; rain_slot_data[6] = "m";
+    rain_slot_type[7] = 2'b01; rain_slot_data[7] = "m";
   end
-  if (rain_hundreds_bcd == 4'd0 && rain_tens_bcd == 4'd0) begin
-    rain_slot_type[1] = 2'b01; rain_slot_data[1] = 8'h20;
-  end else begin
-    rain_slot_type[1] = 2'b00; rain_slot_data[1] = {4'b0000, rain_tens_bcd};
-  end
-  rain_slot_type[2] = 2'b00; rain_slot_data[2] = {4'b0000, rain_units_bcd};
-  rain_slot_type[3] = 2'b01; rain_slot_data[3] = 8'h2E;
-  rain_slot_type[4] = 2'b00; rain_slot_data[4] = {4'b0000, rain_tenths_bcd};
-  rain_slot_type[5] = 2'b01; rain_slot_data[5] = 8'h20;
-  rain_slot_type[6] = 2'b01; rain_slot_data[6] = "m";
-  rain_slot_type[7] = 2'b01; rain_slot_data[7] = "m";
 end
 
 //==========================================================
@@ -389,7 +427,7 @@ always_comb begin
 end
 
 //==========================================================
-// Elapsed time slots (last 5 chars, "HH:MM")
+// Elapsed time slots: normal "HH:MM", Demo "MM:SS" (spec)
 //==========================================================
 
 always_comb begin
@@ -398,17 +436,25 @@ always_comb begin
     elapsed_slot_data[i] = 8'h20;
   end
 
-  // Use last five columns: indices 3..7 -> "HH:MM"
-  // Hours tens: always shown (including 0) so format is "00:00"
-  elapsed_slot_type[3] = 2'b00; elapsed_slot_data[3] = {4'b0000, et_hour_tens};
-  elapsed_slot_type[4] = 2'b00; elapsed_slot_data[4] = {4'b0000, et_hour_units};
-  elapsed_slot_type[5] = 2'b01; elapsed_slot_data[5] = ":";
-  elapsed_slot_type[6] = 2'b00; elapsed_slot_data[6] = {4'b0000, et_min_tens};
-  elapsed_slot_type[7] = 2'b00; elapsed_slot_data[7] = {4'b0000, et_min_units};
+  if (Demo) begin
+    // Demo: minutes and seconds (last 5 cols "MM:SS")
+    elapsed_slot_type[3] = 2'b00; elapsed_slot_data[3] = {4'b0000, et_min_tens};
+    elapsed_slot_type[4] = 2'b00; elapsed_slot_data[4] = {4'b0000, et_min_units};
+    elapsed_slot_type[5] = 2'b01; elapsed_slot_data[5] = ":";
+    elapsed_slot_type[6] = 2'b00; elapsed_slot_data[6] = {4'b0000, et_sec_tens};
+    elapsed_slot_type[7] = 2'b00; elapsed_slot_data[7] = {4'b0000, et_sec_units};
+  end else begin
+    // Normal: hours and minutes "HH:MM"
+    elapsed_slot_type[3] = 2'b00; elapsed_slot_data[3] = {4'b0000, et_hour_tens};
+    elapsed_slot_type[4] = 2'b00; elapsed_slot_data[4] = {4'b0000, et_hour_units};
+    elapsed_slot_type[5] = 2'b01; elapsed_slot_data[5] = ":";
+    elapsed_slot_type[6] = 2'b00; elapsed_slot_data[6] = {4'b0000, et_min_tens};
+    elapsed_slot_type[7] = 2'b00; elapsed_slot_data[7] = {4'b0000, et_min_units};
+  end
 end
 
 //==========================================================
-// Time-of-day slots ("HH:MM:SS")
+// Time-of-day slots: normal "HH:MM:SS", Demo "MM:SS:xx" (sixtieths), roll 24 min
 //==========================================================
 
 always_comb begin
@@ -417,16 +463,27 @@ always_comb begin
     time_slot_data[i] = 8'h20;
   end
 
-  // Hours tens: always shown (including 0) so format is "00:00:00"
-  time_slot_type[0] = 2'b00; time_slot_data[0] = {4'b0000, tod_hour_tens};
-
-  time_slot_type[1] = 2'b00; time_slot_data[1] = {4'b0000, tod_hour_units};
-  time_slot_type[2] = 2'b01; time_slot_data[2] = ":";
-  time_slot_type[3] = 2'b00; time_slot_data[3] = {4'b0000, tod_min_tens};
-  time_slot_type[4] = 2'b00; time_slot_data[4] = {4'b0000, tod_min_units};
-  time_slot_type[5] = 2'b01; time_slot_data[5] = ":";
-  time_slot_type[6] = 2'b00; time_slot_data[6] = {4'b0000, tod_sec_tens};
-  time_slot_type[7] = 2'b00; time_slot_data[7] = {4'b0000, tod_sec_units};
+  if (Demo) begin
+    // Demo: minutes, seconds, sixtieths "MM:SS:xx"
+    time_slot_type[0] = 2'b00; time_slot_data[0] = {4'b0000, tod_min_tens};
+    time_slot_type[1] = 2'b00; time_slot_data[1] = {4'b0000, tod_min_units};
+    time_slot_type[2] = 2'b01; time_slot_data[2] = ":";
+    time_slot_type[3] = 2'b00; time_slot_data[3] = {4'b0000, tod_sec_tens};
+    time_slot_type[4] = 2'b00; time_slot_data[4] = {4'b0000, tod_sec_units};
+    time_slot_type[5] = 2'b01; time_slot_data[5] = ":";
+    time_slot_type[6] = 2'b00; time_slot_data[6] = {4'b0000, tod_sixtieths_tens};
+    time_slot_type[7] = 2'b00; time_slot_data[7] = {4'b0000, tod_sixtieths_units};
+  end else begin
+    // Normal: "HH:MM:SS"
+    time_slot_type[0] = 2'b00; time_slot_data[0] = {4'b0000, tod_hour_tens};
+    time_slot_type[1] = 2'b00; time_slot_data[1] = {4'b0000, tod_hour_units};
+    time_slot_type[2] = 2'b01; time_slot_data[2] = ":";
+    time_slot_type[3] = 2'b00; time_slot_data[3] = {4'b0000, tod_min_tens};
+    time_slot_type[4] = 2'b00; time_slot_data[4] = {4'b0000, tod_min_units};
+    time_slot_type[5] = 2'b01; time_slot_data[5] = ":";
+    time_slot_type[6] = 2'b00; time_slot_data[6] = {4'b0000, tod_sec_tens};
+    time_slot_type[7] = 2'b00; time_slot_data[7] = {4'b0000, tod_sec_units};
+  end
 end
 
 //==========================================================

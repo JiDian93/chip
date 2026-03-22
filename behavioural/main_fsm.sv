@@ -218,12 +218,12 @@ module main_fsm (
             end
             `endif
 
-            // Calibration Mode: Rainfall
+            // Calibration Mode: Rainfall (sub-state order: Digit 3 -> 2 -> 1 -> 0 per spec)
             MODE_RAIN_CALIB: begin
                 in_calibration    = 1'b1;
                 is_rain_calib     = 1'b1;
                 display_mode      = 3'd0;
-                calib_digit_index = sub_state_counter;
+                calib_digit_index = 2'd3 - sub_state_counter;
                 
                 if (start_pressed_single)
                     calib_increment_pulse = 1'b1;
@@ -232,12 +232,12 @@ module main_fsm (
                     next_state = MODE_RAIN;
             end
 
-            // Calibration Mode: Wind Speed
+            // Calibration Mode: Wind Speed (sub-state order: Digit 3 -> 2 -> 1 -> 0 per spec)
             MODE_WIND_CALIB: begin
                 in_calibration    = 1'b1;
                 is_rain_calib     = 1'b0;
                 display_mode      = 3'd1;
-                calib_digit_index = sub_state_counter;
+                calib_digit_index = 2'd3 - sub_state_counter;
                 
                 if (start_pressed_single)
                     calib_increment_pulse = 1'b1;

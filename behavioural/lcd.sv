@@ -54,8 +54,9 @@ typedef enum logic [4:0] {
     S_WRITE_CHAR  = 5'd18,
 
     S_BYTE_SETUP  = 5'd19,
-    S_E_HIGH      = 5'd20,
-    S_E_WAIT      = 5'd21
+    S_E_RISE      = 5'd20,
+    S_E_HIGH      = 5'd21,
+    S_E_WAIT      = 5'd22
 } state_t;
 
 state_t state, state_next;
@@ -189,10 +190,18 @@ always @(posedge clk or negedge rst_n) begin
         // Low-level write timing
         //------------------------------------------------------
         S_BYTE_SETUP: begin
+            // Keep output function simple for DFT modeling.
             lcd_data <= byte_to_write;
             lcd_rs   <= rs_to_write;
-            lcd_e    <= 1'b1;
-            state    <= S_E_HIGH;
+            lcd_e    <= 1'b0;
+            state    <= S_E_RISE;
+        end
+
+        // Keep data/RS stable for one full clock before E rises to
+        // avoid gate-level race/skew against E timing checks.
+        S_E_RISE: begin
+            lcd_e <= 1'b1;
+            state <= S_E_HIGH;
         end
 
         S_E_HIGH: begin

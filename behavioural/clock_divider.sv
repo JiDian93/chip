@@ -10,9 +10,9 @@ module clock_divider (
     output logic tick_1Hz   // 1Hz (64Hz in Demo mode)
 );
 
-    // Derive divider values from compile-time clock period so behaviour
-    // remains correct if the testbench changes `clock_period.
-    localparam int unsigned CLK_HZ = int'($rtoi((1s / `clock_period) + 0.5));
+    // Clock frequency in Hz (for `clock_period = 30517.6ns this is 32.768kHz).
+    // If you change `clock_period` in options.sv, update this value accordingly.
+    localparam int unsigned CLK_HZ = 32768;
     localparam int unsigned DIV_1KHZ = (CLK_HZ >= 1000) ? ((CLK_HZ + 500) / 1000) : 1;
     localparam int unsigned DIV_1HZ = (CLK_HZ > 0) ? CLK_HZ : 1;
     localparam int unsigned DIV_DEMO = (CLK_HZ >= 64) ? (CLK_HZ / 64) : 1;

@@ -7,10 +7,9 @@ module elapsed_time_counter (
     input  logic start_adjust_hit,
 
     output logic [3:0] hour_tens, hour_units,
-    output logic [3:0] min_tens,  min_units
+    output logic [3:0] min_tens,  min_units,
+    output logic [3:0] sec_tens,  sec_units
 );
-
-    logic [3:0] sec_tens, sec_units;
 
     always_ff @(posedge Clock or negedge nReset) begin
         if (!nReset) begin

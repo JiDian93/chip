@@ -61,14 +61,13 @@ module pressure_temperature_core(
   logic        xfer_phase_low;
   logic        cs_release_pending;
   logic        nBaroCS_drv;
+  logic        MOSI_drv;
 
   logic        start_xfer;
   logic        clear_xfer_done;
   logic [7:0]  start_cmd;
   logic [5:0]  start_total_bits;
 
-  // Live environmental values from the testbench model.
-  real tb_p_mb, tb_t_c;
   logic [15:0] p_live;
   logic signed [15:0] t_live;
 
@@ -133,7 +132,7 @@ module pressure_temperature_core(
 
   always_ff @(posedge Clock or negedge nReset) begin
     if (!nReset) begin
-      MOSI           <= 1'b0;
+      MOSI_drv       <= 1'b0;
       SPICLK_out     <= 1'b1;
       nBaroCS_drv    <= 1'b1;
       xfer_active    <= 1'b0;
@@ -149,7 +148,7 @@ module pressure_temperature_core(
     end else begin
       if (baro_pause) begin
         // Release the shared bus immediately while wind-direction mode owns SPI.
-        MOSI               <= 1'b0;
+        MOSI_drv           <= 1'b0;
         SPICLK_out         <= 1'b1;
         nBaroCS_drv        <= 1'b1;
         xfer_active        <= 1'b0;
@@ -170,19 +169,19 @@ module pressure_temperature_core(
           xfer_phase_low  <= 1'b0;
           cs_release_pending <= 1'b0;
           nBaroCS_drv     <= 1'b0;
-          MOSI            <= start_cmd[7];
+          MOSI_drv        <= start_cmd[7];
         end else if (cs_release_pending && spi_tick) begin
           // Release CS away from SCLK posedge to satisfy hold timing.
           cs_release_pending <= 1'b0;
           nBaroCS_drv <= 1'b1;
-          MOSI <= 1'b0;
+          MOSI_drv <= 1'b0;
         end else if (xfer_active && spi_tick) begin
           if (!xfer_phase_low) begin
             // Falling edge: prepare next SDI bit, which is sampled on next rising edge.
             SPICLK_out <= 1'b0;
             xfer_phase_low <= 1'b1;
-            if (xfer_idx < 6'd8) MOSI <= xfer_cmd[7 - xfer_idx];
-            else                 MOSI <= 1'b0;
+            if (xfer_idx < 6'd8) MOSI_drv <= xfer_cmd[7 - xfer_idx];
+            else                 MOSI_drv <= 1'b0;
           end else begin
             // Rising edge: sample MISO.
             SPICLK_out <= 1'b1;
@@ -226,6 +225,7 @@ module pressure_temperature_core(
     end else begin
       start_xfer <= 1'b0;
       clear_xfer_done <= 1'b0;
+      // Keep one common datapath for RTL and gate-level behavior consistency.
       ms5803_decode(d1_raw, d2_raw, c1, c2, c3, c4, c5, c6, p_live, t_live);
 
       if (baro_pause) begin
@@ -234,16 +234,6 @@ module pressure_temperature_core(
         prom_idx <= 3'd1;
       end else begin
 
-      // Track environment continuously so short tests do not observe stale values.
-      tb_p_mb = $root.system.SENSOR.pressure;
-      tb_t_c  = $root.system.SENSOR.temperature;
-      if (tb_p_mb < 300.0)  tb_p_mb = 300.0;
-      if (tb_p_mb > 1100.0) tb_p_mb = 1100.0;
-      if (tb_t_c < -40.0)   tb_t_c = -40.0;
-      if (tb_t_c > 85.0)    tb_t_c = 85.0;
-      p_live = $rtoi(tb_p_mb + 0.5);
-      if (tb_t_c >= 0.0) t_live = $rtoi(tb_t_c * 10.0 + 0.5);
-      else               t_live = $rtoi(tb_t_c * 10.0 - 0.5);
       pressure_mbar <= p_live;
       temp_c_x10    <= t_live;
 
@@ -425,8 +415,12 @@ module pressure_temperature_core(
     temp_slot_type[1] = 2'b01; temp_slot_data[1] = (temp_c_x10 < 0) ? "-" : 8'h20;
   end
 
-  // Keep CS transitions away from clocked updates for timing-check model.
-  assign #(123ns) nBaroCS = nBaroCS_drv;
+  assign MOSI = MOSI_drv;
+  // Register CS so the timing relationship survives synthesis/gate-level sim.
+  always_ff @(posedge Clock or negedge nReset) begin
+    if (!nReset) nBaroCS <= 1'b1;
+    else         nBaroCS <= nBaroCS_drv;
+  end
   // During reset/convert phases the MS5803 model requires a quiet SPI clock line.
   assign baro_quiet = (state == ST_SEND_RESET)   || (state == ST_WAIT_RESET) ||
                       (state == ST_SEND_D1)      || (state == ST_WAIT_D1_CONV) ||
