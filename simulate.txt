@@ -25,7 +25,7 @@ strom3 pressure and temp test
 behavioural
 ./simulate -no_graphics -tech c35b4 -gate behavioural 400s +define++stimulus=system2/storm3.sv -exit
 gate_level
-./simulate -no_graphics -gate -tech c35b4 -sdf gate_level/weather.sdf gate_level 400s   +define+stimulus=system2/storm3.sv +-exit
+./simulate -no_graphics -gate -tech c35b4 -sdf gate_level/weather.sdf gate_level 400s   +define+stimulus=system2/storm3.sv -exit
 
 
 analyze -format sv "../behavioural/anemometer.sv \
