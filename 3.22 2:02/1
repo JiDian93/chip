@@ -87,7 +87,7 @@ run_step "dft_drc" {dft_drc}
 
 # é¾é¿åå¥ gate_level/scan_chain_length.rpt â ä»¿ç +SCAN_CHAIN= ç¨æ­¤æ°å¼
 run_step "report_scan_chain" {
-  redirect -file ../gate_level/scan_chain_length.rpt {report_scan_chain}
+  redirect -file ../synthesis/scan_chain_length.rpt {report_scan_chain}
 }
 
 run_step "report_names" {report_names -rules verilog}
