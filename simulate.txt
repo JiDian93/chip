@@ -54,3 +54,8 @@ source script2_scan.tcl
 ./simulate -no_graphics -gate -tech c35b4 -sdf gate_level/weather.sdf gate_level 400s \
   +define+stimulus=system2/scan_chain_course_test.sv +define+sim_time=400s \
   +SCAN_CHAIN=832 +define+SCAN_CHAIN_LOOSE +notimingchecks -exit
+
+
+scan test
+./simulate  -no_graphics -gate -tech c35b4 -sdf gate_level/weather.sdf gate_level 5s   +define+stimulus=system2/scantest.sv +notimingchecks -exit
+
