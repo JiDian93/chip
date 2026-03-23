@@ -238,7 +238,7 @@ end
 // In wind-direction mode, prioritize vane SPI so each setpoint is observable.
 // BARO is paused in this mode, so the shared bus is safe for vane ownership.
 assign mode2_winddir_active = (display_mode == 3'd2);
-assign pause_wind_spi = (!mode2_winddir_active) && baro_quiet;
+assign pause_wind_spi = baro_quiet;
 assign SPICLK_vane_gated = pause_wind_spi ? 1'b1 : SPICLK_vane;
 assign nVaneCS_raw_gated = pause_wind_spi ? 1'b1 : nVaneCS_raw;
 assign SPICLK = (!nBaroCS_clk_sel) ? SPICLK_baro : SPICLK_vane_gated;

@@ -81,7 +81,7 @@
 //  supports a pressure and temperature sensor
 //
 `define include_pressure_sensor
-
+`define altimeter_second_order_compensation
 // The following line specifies the number of operating modes
 //
 `define num_modes 7

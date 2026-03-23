@@ -96,6 +96,7 @@ module weather (
   // Reset synchronization: two-stage DFF syncs async reset to CORE_Cslock domain
   // synopsys dc_tcl_script_begin
   // set_dont_touch [get_cells RESET_SYNC_FF*]
+  //   set_scan_element false [get_cells RESET_SYNC_FF*]
   // synopsys dc_tcl_script_end
 
   DFC1 RESET_SYNC_FF1 (

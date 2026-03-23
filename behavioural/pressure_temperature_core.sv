@@ -22,8 +22,10 @@ module pressure_temperature_core(
   localparam logic [7:0] CMD_PROM0    = 8'hA0;
 
   localparam int SPI_TICK_DIV      = 5;
-  localparam int WAIT_RESET_CYCLES = 1500;
-  localparam int WAIT_CONV_CYCLES  = 45000;
+  // Clock is ~32.768kHz (30.5176us period). Use cycle counts that satisfy
+  // MS5803 timing with margin while keeping the update rate responsive.
+  localparam int WAIT_RESET_CYCLES = 120;   // ~3.66ms, spec reset reload is 2.8ms
+  localparam int WAIT_CONV_CYCLES  = 25;    // ~0.76ms, OSR=256 max conversion is 0.60ms
   localparam int WAIT_NEXT_CYCLES  = 200;
 
   typedef enum logic [5:0] {
@@ -70,6 +72,10 @@ module pressure_temperature_core(
 
   logic [15:0] p_live;
   logic signed [15:0] t_live;
+
+  logic        conv_guard;
+  logic [16:0] conv_guard_cnt;
+  logic        in_conv_zone;
 
   function automatic void ms5803_decode(
     input  logic [23:0] d1_in,
@@ -159,7 +165,11 @@ module pressure_temperature_core(
       end else begin
         if (clear_xfer_done) xfer_done <= 1'b0;
 
-        if (start_xfer && !xfer_active) begin
+        if (cs_release_pending) begin
+          cs_release_pending <= 1'b0;
+          nBaroCS_drv <= 1'b1;
+          MOSI_drv <= 1'b0;
+        end else if (start_xfer && !xfer_active) begin
           xfer_active     <= 1'b1;
           xfer_idx        <= '0;
           xfer_total_bits <= start_total_bits;
@@ -167,14 +177,8 @@ module pressure_temperature_core(
           xfer_rx_shift   <= '0;
           SPICLK_out      <= 1'b1;
           xfer_phase_low  <= 1'b0;
-          cs_release_pending <= 1'b0;
           nBaroCS_drv     <= 1'b0;
           MOSI_drv        <= start_cmd[7];
-        end else if (cs_release_pending && spi_tick) begin
-          // Release CS away from SCLK posedge to satisfy hold timing.
-          cs_release_pending <= 1'b0;
-          nBaroCS_drv <= 1'b1;
-          MOSI_drv <= 1'b0;
         end else if (xfer_active && spi_tick) begin
           if (!xfer_phase_low) begin
             // Falling edge: prepare next SDI bit, which is sampled on next rising edge.
@@ -244,13 +248,13 @@ module pressure_temperature_core(
             wait_cnt <= '0;
             clear_xfer_done <= 1'b1;
             start_cmd <= CMD_RESET;
-            start_total_bits <= 6'd8;
+            start_total_bits <= 6'd24;
             start_xfer <= 1'b1;
             state <= ST_SEND_RESET;
           end
         end
 
-        ST_SEND_RESET: if (xfer_done) begin
+        ST_SEND_RESET: if (xfer_done && !start_xfer) begin
           wait_cnt <= '0;
           state <= ST_WAIT_RESET;
         end
@@ -268,19 +272,22 @@ module pressure_temperature_core(
           end
         end
 
-        ST_SEND_PROM: if (xfer_done) begin
+        ST_SEND_PROM: if (xfer_done && !start_xfer) begin
           prom_word <= xfer_rx_data16;
           state <= ST_STORE_PROM;
         end
 
         ST_STORE_PROM: begin
+          // synthesis translate_off
+          $display("[BARO DBG] PROM[%0d] = 0x%04h (%0d) at %0t", prom_idx, prom_word, prom_word, $time);
+          // synthesis translate_on
           unique case (prom_idx)
-            3'd1: c1 <= prom_word;
-            3'd2: c2 <= prom_word;
-            3'd3: c3 <= prom_word;
-            3'd4: c4 <= prom_word;
-            3'd5: c5 <= prom_word;
-            3'd6: c6 <= prom_word;
+            3'd1: if (prom_word != 16'd0) c1 <= prom_word;
+            3'd2: if (prom_word != 16'd0) c2 <= prom_word;
+            3'd3: if (prom_word != 16'd0) c3 <= prom_word;
+            3'd4: if (prom_word != 16'd0) c4 <= prom_word;
+            3'd5: if (prom_word != 16'd0) c5 <= prom_word;
+            3'd6: if (prom_word != 16'd0) c6 <= prom_word;
             default: ;
           endcase
 
@@ -300,7 +307,7 @@ module pressure_temperature_core(
           end
         end
 
-        ST_SEND_D1: if (xfer_done) begin
+        ST_SEND_D1: if (xfer_done && !start_xfer) begin
           wait_cnt <= '0;
           state <= ST_WAIT_D1_CONV;
         end
@@ -316,8 +323,11 @@ module pressure_temperature_core(
           end
         end
 
-        ST_READ_D1: if (xfer_done) begin
-          d1_raw <= xfer_rx_data;
+        ST_READ_D1: if (xfer_done && !start_xfer) begin
+          // synthesis translate_off
+          $display("[BARO DBG] D1 raw = 0x%06h (%0d) at %0t", xfer_rx_data, xfer_rx_data, $time);
+          // synthesis translate_on
+          if (xfer_rx_data != 24'd0) d1_raw <= xfer_rx_data;
           clear_xfer_done <= 1'b1;
           start_cmd <= CMD_D2_256;
           start_total_bits <= 6'd8;
@@ -325,7 +335,7 @@ module pressure_temperature_core(
           state <= ST_SEND_D2;
         end
 
-        ST_SEND_D2: if (xfer_done) begin
+        ST_SEND_D2: if (xfer_done && !start_xfer) begin
           wait_cnt <= '0;
           state <= ST_WAIT_D2_CONV;
         end
@@ -341,8 +351,11 @@ module pressure_temperature_core(
           end
         end
 
-        ST_READ_D2: if (xfer_done) begin
-          d2_raw <= xfer_rx_data;
+        ST_READ_D2: if (xfer_done && !start_xfer) begin
+          // synthesis translate_off
+          $display("[BARO DBG] D2 raw = 0x%06h (%0d) at %0t", xfer_rx_data, xfer_rx_data, $time);
+          // synthesis translate_on
+          if (xfer_rx_data != 24'd0) d2_raw <= xfer_rx_data;
           state <= ST_DECODE;
         end
 
@@ -415,21 +428,41 @@ module pressure_temperature_core(
     temp_slot_type[1] = 2'b01; temp_slot_data[1] = (temp_c_x10 < 0) ? "-" : 8'h20;
   end
 
-  // Synchronous-reset-only output FFs: during async-reset X-resolution in
-  // gate-level sim, MOSI and nBaroCS hold their previous value (X) and do
-  // not transition until the next Clock edge, ensuring they never change
-  // within 25 ns of SCLK posedge and satisfying the sensor hold checks.
-  always_ff @(posedge Clock) begin
-    if (!nReset) MOSI <= 1'b0;
-    else         MOSI <= MOSI_drv;
+  // Detect states where a sensor ADC conversion may be in progress.
+  assign in_conv_zone = (state == ST_SEND_D1) || (state == ST_WAIT_D1_CONV) ||
+                        (state == ST_SEND_D2) || (state == ST_WAIT_D2_CONV);
+
+  // Conversion guard: keeps SCLK quiet even after baro_pause forces the state
+  // machine to IDLE, covering the remainder of any in-flight sensor conversion.
+  always_ff @(posedge Clock or negedge nReset) begin
+    if (!nReset) begin
+      conv_guard     <= 1'b0;
+      conv_guard_cnt <= '0;
+    end else begin
+      if (baro_pause && in_conv_zone) begin
+        conv_guard     <= 1'b1;
+        conv_guard_cnt <= '0;
+      end else if (conv_guard) begin
+        if (conv_guard_cnt >= WAIT_CONV_CYCLES) begin
+          conv_guard <= 1'b0;
+        end else begin
+          conv_guard_cnt <= conv_guard_cnt + 1'b1;
+        end
+      end
+    end
   end
-  always_ff @(posedge Clock) begin
-    if (!nReset) nBaroCS <= 1'b1;
-    else         nBaroCS <= nBaroCS_drv;
+
+  always_ff @(posedge Clock or negedge nReset) begin
+    if (!nReset) begin
+      MOSI    <= 1'b0;
+      nBaroCS <= 1'b1;
+    end else begin
+      MOSI    <= MOSI_drv;
+      nBaroCS <= nBaroCS_drv;
+    end
   end
   // During reset/convert phases the MS5803 model requires a quiet SPI clock line.
-  assign baro_quiet = (state == ST_SEND_RESET)   || (state == ST_WAIT_RESET) ||
-                      (state == ST_SEND_D1)      || (state == ST_WAIT_D1_CONV) ||
-                      (state == ST_SEND_D2)      || (state == ST_WAIT_D2_CONV);
+  assign baro_quiet = conv_guard ||
+                      (state != ST_IDLE && state != ST_DECODE && state != ST_CYCLE_WAIT);
 
 endmodule
