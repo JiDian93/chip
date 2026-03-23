@@ -248,7 +248,7 @@ module pressure_temperature_core(
             wait_cnt <= '0;
             clear_xfer_done <= 1'b1;
             start_cmd <= CMD_RESET;
-            start_total_bits <= 6'd24;
+            start_total_bits <= 6'd8;
             start_xfer <= 1'b1;
             state <= ST_SEND_RESET;
           end
