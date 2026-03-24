@@ -21,6 +21,7 @@ integer first_sdo_edge_after_reset;
 reg observed_bit;
 reg sdo_monitor_enable;
 reg sdo_prev_sampled;
+integer sdo_x_count;
 
 task automatic scan_shift_sample(
   input  reg sdi_bit,
@@ -55,6 +56,7 @@ initial begin
   first_sdo_rise_after_reset = -1;
   first_sdo_edge_after_reset = -1;
   sdo_prev_sampled   = 1'b0;
+  sdo_x_count        = 0;
 
   // Keep reset low for one clock cycle, then release.
   repeat (1) @(posedge Clock);
@@ -80,12 +82,22 @@ initial begin
   for (i = 0; i < SCAN_PATTERN_LEN; i = i + 1) begin
     scan_shift_sample(tx_bits[i], observed_bit);
     rx_bits[i] = observed_bit;
+    if (observed_bit === 1'bx) begin
+      sdo_x_count = sdo_x_count + 1;
+      $display("[SCAN][SDO_X] time=%0t phase=PATTERN_SHIFT rx_idx=%0d cycle_after_reset=%0d SDI=%0b SDO=%0b",
+               $realtime, i, cycle_after_reset, tx_bits[i], observed_bit);
+    end
   end
 
   // Keep shifting zeros to observe delayed scan-out.
   for (i = SCAN_PATTERN_LEN; i < SCAN_PATTERN_LEN + MAX_SCAN_DELAY; i = i + 1) begin
     scan_shift_sample(1'b0, observed_bit);
     rx_bits[i] = observed_bit;
+    if (observed_bit === 1'bx) begin
+      sdo_x_count = sdo_x_count + 1;
+      $display("[SCAN][SDO_X] time=%0t phase=ZERO_SHIFT rx_idx=%0d cycle_after_reset=%0d SDI=0 SDO=%0b",
+               $realtime, i, cycle_after_reset, observed_bit);
+    end
   end
 
   found_delay = -1;
@@ -126,6 +138,7 @@ initial begin
     $display("[SCAN][PASS] Found delay n=%0d cycles, relation=%0s",
              found_delay, (found_inv ? "INVERSE" : "SAME"));
   end
+  $display("[SCAN][SDO_X_SUMMARY] total_x_samples=%0d", sdo_x_count);
 
   // Keep simulation running so gate-level waveform can clearly show
   // SDI/SDO relationship after long chain delay (e.g. n > 800).
@@ -150,6 +163,11 @@ always @(posedge Clock) begin
       first_sdo_edge_after_reset = cycle_after_reset;
       $display("[SCAN][FIRST_SDO_EDGE_AFTER_RESET] time=%0t cycle_after_reset=%0d SDO:%0b->%0b",
                $realtime, cycle_after_reset, sdo_prev_sampled, SDO);
+    end
+
+    if (SDO === 1'bx) begin
+      $display("[SCAN][SDO_X_MONITOR] time=%0t scan_cycle=%0d cycle_after_reset=%0d SDI=%0b SDO=%0b",
+               $realtime, scan_cycle_count, cycle_after_reset, SDI, SDO);
     end
 
     // Keep this if you want the first 0->1 cycle specifically.
