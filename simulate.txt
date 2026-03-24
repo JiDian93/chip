@@ -59,3 +59,11 @@ source script2_scan.tcl
 scan test
 ./simulate  -no_graphics -gate -tech c35b4 -sdf gate_level/weather.sdf gate_level 5s   +define+stimulus=system2/scantest.sv +notimingchecks -exit
 
+always_ff @( posedge Clock, negedge nReset)
+ 
+always_ff @( posedge Clock or negedge nReset)
+ 
+always_ff @( posedge clk or negedge rst_n)
+ 
+always_ff @( posedge Clock or negedge nReset) begin
+ 
