@@ -5,6 +5,7 @@ localparam integer SCAN_PATTERN_LEN = 8;
 localparam integer MAX_SCAN_DELAY   = 16384;
 localparam integer POST_PASS_CYCLES = 3000;
 localparam integer RESET_HOLD_CYCLES = 32;
+localparam integer FLUSH_CYCLES     = 1024;
 localparam [SCAN_PATTERN_LEN-1:0] SCAN_PATTERN = 8'b1011_0010;
 
 reg tx_bits [0:SCAN_PATTERN_LEN-1];
@@ -55,12 +56,20 @@ initial begin
   first_sdo_edge_after_reset = -1;
   sdo_prev_sampled   = 1'b0;
 
-  // Keep reset low for multiple scan clocks, then release.
-  repeat (RESET_HOLD_CYCLES) @(posedge Clock);
+  // Keep reset low for one clock cycle, then release.
+  repeat (1) @(posedge Clock);
   nReset = 1'b1;
   sdo_monitor_enable = 1'b1;
   sdo_prev_sampled = SDO;
   $display("[SCAN][RESET_RELEASE] time=%0t", $realtime);
+
+  // Flush the scan chain: shift enough zeros to push initial state
+  // through all FFs, eliminating the QN-connection transient.
+  for (i = 0; i < FLUSH_CYCLES; i = i + 1) begin
+    scan_shift_sample(1'b0, observed_bit);
+  end
+  sdo_prev_sampled = SDO;
+  $display("[SCAN][FLUSH_DONE] time=%0t flushed=%0d cycles", $realtime, FLUSH_CYCLES);
 
   // Build a short deterministic scan pattern.
   for (i = 0; i < SCAN_PATTERN_LEN; i = i + 1) begin
