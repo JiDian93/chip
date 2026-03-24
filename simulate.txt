@@ -47,6 +47,8 @@ analyze -format sv "../behavioural/anemometer.sv \
 
 cd synthesis
 dc_shell
+dc_shell -f 0script.tcl 2>&1 | tail -200
+
 source scrip_synthesis_sync_scan.tcl
 source 0script.tcl
 source script2_scan.tcl
