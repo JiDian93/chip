@@ -1,3 +1,27 @@
+ams_edis -tech c35 \
+  -vn weather.v -vt weather \
+  -metlay thin4M \
+  -corelib CORELIB \
+  -corevolt _3.3V \
+  -corevolt_wc _3.3V \
+  -corevolt_bc _3.3V \
+  -iolib IOLIB \
+  -iovolt _3.3V \
+  -iovolt_wc _3.3V \
+  -iovolt_bc _3.3V \
+  -ediver EDI13.1ISR4
+
+ln -s ../../gate_level/weather.v VERILOG/weather.v
+ln -s ../../constraints/weather.sdc CONSTRAINTS/weather_func.sdc
+ln -s ../../constraints/weather.sdc CONSTRAINTS/weather_test.sdc
+
+
+
+
+
+
+
+
 # ------------------------------------------------------------------
 # weather.sv PnR / padring flow
 # ------------------------------------------------------------------
