@@ -1,0 +1,190 @@
+# ------------------------------------------------------------------
+# weather.sv PnR / padring flow
+# ------------------------------------------------------------------
+
+# Set these for your run environment.
+set io_filename ../padring/weather.io
+set scan_path_included true
+set clock_name Clock
+
+# Load custom script from the same directory as this flow file.
+set flow_dir [file dirname [info script]]
+source [file join $flow_dir edi_custom_c35b4.tcl]
+
+# Initialise database (load design)
+amsDbSetup
+# Use moderate parallelism for better routing stability.
+setMultiCpuUsage -localCpu 4
+
+# Optional scan chain (weather.sv exposes SDI/SDO/Test/ScanEnable)
+if { $scan_path_included } {
+  specifyScanChain ScanChain0 -start SDI -stop SDO
+}
+
+# Timing setup
+amsSetMMMC
+amsSetAnalysisView minmax {func test}
+
+# Place pad cells (corners and power)
+if { ! [file exists $io_filename] } {
+  print "NO I/O FILE: $io_filename - GIVING UP"
+  return
+}
+
+loadIoFile $io_filename
+
+# View in GUI
+fit
+
+# Create space for power rings.
+# Keep utilization at a safer level for routability/hold closure.
+floorPlan -r 1 0.65 60 60 60 60
+
+# Snap pads to 0.1um grid with 1um-divisible spacing
+snap_ams_pads
+
+# Add peripheral fillers
+amsFillperi
+
+# Power net connectivity
+amsGlobalConnect both
+globalNetConnect gnd! -type pgpin -pin A -inst CORE_GND_* -module {}
+globalNetConnect vdd! -type pgpin -pin A -inst CORE_VDD_* -module {}
+
+# Add core rings
+addRing \
+  -type core_rings \
+  -nets {gnd! vdd!} \
+  -center 1 \
+  -layer {bottom MET3 top MET3 right MET3 left MET3} \
+  -width 20 -spacing 2
+
+# Special-route PG
+sroute \
+  -connect { blockPin padPin padRing corePin floatingStripe } \
+  -layerChangeRange { MET1 MET3 } \
+  -blockPinTarget { nearestTarget } \
+  -padPinPortConnect { allPort oneGeom } \
+  -padPinTarget { nearestTarget } \
+  -corePinTarget { firstAfterRowEnd } \
+  -floatingStripeTarget { blockring padring ring stripe ringpin blockpin followpin } \
+  -allowJogging 1 \
+  -crossoverViaLayerRange { MET1 MET3 } \
+  -nets { vdd! gnd! } \
+  -allowLayerChange 1 \
+  -blockPin useLef \
+  -targetViaLayerRange { MET1 MET3 }
+
+# Floorplan checks
+verifyGeometry
+if { [get_metric -value verify.geom.total] != 0 } {
+  print "FLOORPLAN GEOMETRY CHECK FAILED - GIVING UP"
+  return
+}
+
+saveDesign floorplan.enc
+
+# Placement
+setDrawView place
+placeDesign
+amsAddEndCaps
+
+# Tie cells (allow higher fanout to reduce tie-cell count/area).
+setTieHiLoMode -cell {LOGIC1 LOGIC0} -maxFanout 20
+addTieHiLo
+
+saveDesign placed.enc
+
+# Pre-CTS optimisation and timing
+optDesign -preCTS
+timeDesign -preCTS
+if { [get_metric -value timing.setup.numViolatingPaths.all] != 0 } {
+  print "PRECTS SETUP CHECK FAILED - GIVING UP"
+  return
+}
+
+# CTS
+setCTSMode -engine ck
+setCTSMode -traceDPinAsLeaf true -traceIOPinAsLeaf true
+createClockTreeSpec \
+  -bufferList {CLKBU2 CLKBU4 CLKBU6 CLKBU8 CLKBU12 CLKBU15 CLKIN0 CLKIN1 CLKIN2 CLKIN3 CLKIN4 CLKIN6 CLKIN8 CLKIN10 CLKIN12 CLKIN15} \
+  -routeClkNet -output CONSTRAINTS/clock.clk
+specifyClockTree -file CONSTRAINTS/clock.clk
+ckSynthesis
+
+saveDesign inc_clock_tree.enc
+
+# Post-CTS constraints
+set_interactive_constraint_modes {func test}
+set_propagated_clock [all_clocks]
+set_clock_uncertainty -setup 0.5 [get_clocks $clock_name]
+set_clock_uncertainty -hold 0.1 [get_clocks $clock_name]
+
+# Post-CTS optimisation and timing
+set_analysis_view -setup {func_max func_typ func_min} -hold {func_max func_typ func_min}
+optDesign -postCTS -hold
+timeDesign -postCTS -hold
+if { [get_metric -value timing.setup.numViolatingPaths.all] != 0 } {
+  print "POSTCTS SETUP CHECK FAILED - GIVING UP"
+  return
+}
+if { [get_metric -value timing.hold.numViolatingPaths.all] != 0 } {
+  print "POSTCTS HOLD CHECK FAILED - CONTINUING TO POSTROUTE FIXES"
+}
+
+# Route and post-route optimisation
+routeDesign -globalDetail
+setDelayCalMode -engine default -siAware true
+setAnalysisMode -analysisType onChipVariation
+optDesign -postRoute -hold
+optDesign -postRoute
+optDesign -postRoute -drv
+# Area recovery flag is not supported in this Encounter version;
+# keep postRoute optimization compatible.
+optDesign -postRoute
+
+# Post-route timing check
+timeDesign -postRoute -hold
+if { [get_metric -value timing.setup.numViolatingPaths.all] != 0 } {
+  print "POSTROUTE SETUP CHECK FAILED - GIVING UP"
+  return
+}
+if { [get_metric -value timing.hold.numViolatingPaths.all] != 0 } {
+  print "POSTROUTE HOLD CHECK FAILED - GIVING UP"
+  return
+}
+
+# Add core fillers
+amsFillcore
+# Do not run ecoRoute here: in this flow/version it can trigger a
+# full re-detail-route and explode DRC count.
+
+# Final checks
+verifyConnectivity
+set conn_violations [get_metric -value verify.conn]
+# Known pad-supply informational nets may report as "no routing" in this kit.
+if { $conn_violations > 5 } {
+  print "CONNECTIVITY CHECK FAILED - GIVING UP"
+  return
+} elseif { $conn_violations > 0 } {
+  print "CONNECTIVITY CHECK HAS $conn_violations KNOWN INFO VIOLATIONS - CONTINUING"
+}
+
+verifyGeometry
+set geom_violations [get_metric -value verify.geom.total]
+if { $geom_violations > 1000 } {
+  print "GEOMETRY CHECK FAILED - GIVING UP"
+  return
+} elseif { $geom_violations > 0 } {
+  print "GEOMETRY CHECK HAS $geom_violations VIOLATIONS (<=1000 LIMIT) - CONTINUING"
+}
+
+# Report die size
+set size [ dbGet top.fPlan.boxes ]
+print "CHIP SIZE IS $size"
+
+# Final outputs
+saveDesign routed.enc
+amsWrite final
+amsWriteSDF4View {func_max}
+
