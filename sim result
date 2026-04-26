@@ -1,0 +1,86 @@
+[LCD] |  0.0 mm|
+-- Mode 0: Total Rainfall --
+[LCD] |  0.3 mm|
+[LCD] |  0.6 mm|
+-- Clear rainfall via Start/Adjust --
+[LCD] |  0.0 mm|
+[LCD] |  0.3 mm|
+[LCD] |  0.6 mm|
+-- Mode 1: Instantaneous Wind Speed --
+[LCD] |  0.8 mm|
+[LCD] |  0.8 /s|
+[LCD] | 0.2 m/s|
+[LCD] | 2.2 m/s|
+-- Mode 2: Wind Direction --
+  [set] N
+[LCD] | 2.2   N|
+[LCD] |       N|
+  [ok ] N ->   N
+  [set] NNE
+[LCD] |     NNE|
+  [ok ] NNE -> NNE
+  [set] NE
+[LCD] |      NE|
+  [ok ] NE ->  NE
+  [set] ENE
+[LCD] |     ENE|
+  [ok ] ENE -> ENE
+  [set] E
+[LCD] |       E|
+  [ok ] E ->   E
+  [set] ESE
+[LCD] |     ESE|
+  [ok ] ESE -> ESE
+  [set] SE
+[LCD] |      SE|
+  [ok ] SE ->  SE
+  [set] SSE
+[LCD] |     SSE|
+  [ok ] SSE -> SSE
+  [set] S
+[LCD] |       S|
+  [ok ] S ->   S
+  [set] SSW
+[LCD] |     SSW|
+  [ok ] SSW -> SSW
+  [set] SW
+[LCD] |      SW|
+  [ok ] SW ->  SW
+  [set] WSW
+[LCD] |     WSW|
+  [ok ] WSW -> WSW
+  [set] W
+[LCD] |       W|
+  [ok ] W ->   W
+  [set] WNW
+[LCD] |     WNW|
+  [ok ] WNW -> WNW
+  [set] NW
+[LCD] |      NW|
+  [ok ] NW ->  NW
+  [set] NNW
+[LCD] |     NNW|
+  [ok ] NNW -> NNW
+-- Mode 3: Elapsed Time --
+[LCD] |   00:01|
+-- Clear elapsed time via Start/Adjust --
+[LCD] |   00:00|
+-- Mode 4: Time of Day --
+[LCD] |  :01:35|
+[LCD] |00:01:35|
+[LCD] |00:01:36|
+[LCD] |00:01:37|
+[LCD] |00:01:38|
+[LCD] |00:01:39|
+[LCD] |00:01:40|
+[LCD] |00:01:41|
+[LCD] |00:01:42|
+[LCD] |00:01:43|
+[LCD] |00:01:44|
+[LCD] |00:01:45|
+-- Mode 5: Pressure --
+[LCD] |00:01:4b|
+[LCD] | 1009 mb|
+-- Mode 6: Temperature --
+[LCD] | 100.5 C|
+[LCD] |   8.5 C|
