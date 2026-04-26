@@ -69,3 +69,7 @@ always_ff @( posedge clk or negedge rst_n)
  
 always_ff @( posedge Clock or negedge nReset) begin
  
+behavioural sim
+./simulate -no_graphics -tech c35b4 -gate behavioural 400s +define++stimulus=system2/storm2.sv -exit
+Gatelevel sim
+./simulate -no_graphics -gate -tech c35b4 gate_level 400s +define+stimulus=system2/storm2.sv -exit
