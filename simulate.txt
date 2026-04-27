@@ -73,3 +73,6 @@ behavioural sim
 ./simulate -no_graphics -tech c35b4 -gate behavioural 400s +define++stimulus=system2/storm2.sv -exit
 Gatelevel sim
 ./simulate -no_graphics -gate -tech c35b4 gate_level 400s +define+stimulus=system2/storm2.sv -exit
+extracted sim
+./simulate -no_graphics -gate -tech c35b4 -sdf extracted/weather_func_max.sdf extracted 400s   +define+stimulus=system2/storm2.sv  -exit
+./simulate -no_graphics -gate -tech c35b4 extracted 400s +define+stimulus=system2/storm2.sv -exit
